@@ -1,34 +1,34 @@
-# Ellie Cast – forfatterside
+# Ellie Cast – Author Website
 
-Siden er **bare på engelsk**. Admin-panelet har norske forklaringer, men alle tekstene du skriver der vises på engelsk på siden.
+The official website of author Ellie Cast: https://asarayja.github.io/ellie-cast/
 
-Se siden lokalt: `python3 -m http.server` i denne mappen, og gå til http://localhost:8000
+## Contents
 
-## Farger
-
-Alle fargene står øverst i `assets/style.css`, i blokken merket **FARGER**. Lyst tema først, mørkt tema under
-(mørkt tema står to ganger – bytt begge).
-
-| Navn | Brukes til |
+| File / folder | What |
 | --- | --- |
-| `--bg` / `--bg-2` | Bakgrunnen |
-| `--ink` | Teksten |
-| `--muted` | Dempet tekst |
-| `--accent` | Knapper, lenker og detaljer |
-| `--accent-2` | Andre farge i glød og overganger |
-| `--on-accent` | Teksten på knappene |
+| `index.html`, `assets/` | The website |
+| `data/site.json` | All content: books, excerpts, about, contact and music |
+| `admin/` | Admin panel for editing the content |
+| `bilder/` | Images and book covers |
+| `musikk/<album-id>/` | Music uploaded through the admin panel, one folder per album |
 
-## Innhold og admin
+## Admin panel
 
-Alt innholdet ligger i `data/site.json` og redigeres i `admin/` (samme GitHub-innlogging som de andre sidene):
-bøker (omslag, beskrivelse, utdrag, kjøpslenker), Om Ellie, kontakt og musikk.
-Teksten om Ellie er fortsatt et eksempel og må byttes ut.
+Go to https://asarayja.github.io/ellie-cast/admin/ and connect with a GitHub token
+(fine-grained, with **Contents: Read and write** access to this repository). The token is only stored in your browser.
 
-## Adresser
+From the admin panel you can edit books (cover, description, excerpt, buy links), About Ellie, contact details and music.
+Press **Publiser** to save – the site updates after about a minute.
+
+## Colours
+
+All colours are at the top of `assets/style.css`, in the block marked **FARGER**, based on Ellie's fursona palette
+(`#7851a9`, `#609ec1`, `#242143`, `#cccccc`, `#f8edf3`).
+
+## Pages
 
 `#/books`, `#/book/the-fragmented-collector`, `#/music`, `#/about`, `#/contact`
 
-## Privat
+## Private files
 
-PDF-er (som manuset) skal aldri på nettsiden. `.gitignore` stopper dem hvis mappen lastes opp med git,
-men ikke last dem opp for hånd på GitHub heller.
+Manuscripts (PDF) and anything in `privat/` must never be published. They are excluded in `.gitignore`.
