@@ -1,0 +1,84 @@
+{
+  "site": {
+    "name": "Ellie Cast",
+    "role": {
+      "en": "Author"
+    },
+    "tagline": {
+      "en": "Author of The Fragmented Collector. Here you will find the books, sneak peeks and how to get in touch."
+    },
+    "quote": {
+      "en": "No matter what…"
+    },
+    "quoteSource": {
+      "en": "From “The Fragmented Collector”"
+    },
+    "shareImage": ""
+  },
+  "about": {
+    "image": "",
+    "short": {
+      "en": "Read more about Ellie Cast, the author behind The Fragmented Collector."
+    },
+    "text": {
+      "en": "Ellie Cast has written stories for as long as Ellie can remember – first in notebooks with a pencil, later late at night at the kitchen table.\n\nThe books are often about people at a crossroads, and about the small choices that change everything. Rainy days, strong tea and books that make you lose track of time are among the favourites.\n\nThis text is an example and will be replaced with Ellie's own."
+    },
+    "facts": []
+  },
+  "contact": {
+    "email": "",
+    "text": {
+      "en": "Want to ask about a book, invite Ellie to an event or just say hi? Feel free to send a message."
+    },
+    "links": [
+      {
+        "label": "Instagram",
+        "url": ""
+      },
+      {
+        "label": "TikTok",
+        "url": "https://www.tiktok.com/@EllieTheAwkwardOne"
+      },
+      {
+        "label": "Goodreads",
+        "url": ""
+      }
+    ]
+  },
+  "books": [
+    {
+      "id": "the-fragmented-collector",
+      "title": {
+        "en": "The Fragmented Collector"
+      },
+      "series": {
+        "en": ""
+      },
+      "status": "published",
+      "year": "June 26, 2026",
+      "genre": {
+        "en": ""
+      },
+      "pages": "",
+      "cover": "bilder/the-fragmented-collector.jpg",
+      "color": "#23203a",
+      "blurb": {
+        "en": "Trenton Makes, The Collector Sedates but The Protector is always watching.\n\nOne Brother conspires to collect the memories of his past to redesign, rebuild and reclaim identity, his autonomy. - While the other brother collects for power, control, “love” and “healing.”\n\nStanding in the middle of it all is The Healer.\nShe never asked for this role but in some strange way, fate chose this destiny for her. Now she must navigate the murky waters of dysfunctional family dynamics, deities and traumas in order to escape total isolation. The Collector’s playground. This home is not where the heart is, it’s where the void beats, breathes and isolates all living things. A place where the walls are soundproof, Gates and windows secured with steel structures at the touch of a button. Even if somehow a collection manages to wake, the rest of the world will never hear them screaming.\n\nBut does anyone ever truly escape The Collector?\nFor The Healer’s sake, let us pray that not a fragment of his tainted soul can bleed through cracks and ink into her light.\n\nThe rules are simple: Stay aware. Stay away. Stay awake.\nIn order to remain without sedation,The Healer must choose:\n\nFall in or Fall out, Decide."
+      },
+      "excerpt": {
+        "en": "Flames flicker across the frosting. The candles burn low, wax puddling into the cracks of the cake like melting flesh. He stands with his hoodie up, head low, eyes locked on the candles as if they might whisper something back.\n\n“Happy birthday to me…”\n\nHis voice lilts to the tune, but the warmth is missing. It’s hollow. Off. Like a child humming at the scene of a crime."
+      },
+      "links": [
+        {
+          "label": {
+            "en": "Buy the book"
+          },
+          "url": ""
+        }
+      ]
+    }
+  ],
+  "music": {
+    "albums": []
+  }
+}

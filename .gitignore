@@ -1,0 +1,3 @@
+# Private filer som aldri skal på nettsiden
+*.pdf
+privat/

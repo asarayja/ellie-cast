@@ -1,0 +1,1144 @@
+// Admin-panel for Ellie Cast sin forfatterside.
+// Samme fil brukes i begge versjonene av siden:
+//  - GitHub Pages: lagrer innhold og bilder direkte i repoet via GitHub sitt API.
+//  - PHP: lagrer i SQL-databasen via ../api/admin.php  (<body data-backend="php">)
+
+(() => {
+  const BACKEND = document.body.dataset.backend === 'php' ? 'php' : 'github';
+  const SETTINGS_KEY = 'ec-admin-github'; // eget navn, så det ikke blandes med andre sider på samme github.io-adresse
+  const DATA_PATH = 'data/site.json';
+  const UPLOAD_DIR = 'bilder/uploads';
+  const AUDIO_ROOT = 'musikk'; // hvert album har sin egen mappe: musikk/<album-id>/
+  const ALBUM_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+  const LOCAL_AUDIO = /^musikk\/[a-z0-9-]+\/[^/]+$/;
+  const MAX_AUDIO_MB = 40;
+  const DEFAULT_SHARE_IMAGE = 'bilder/deling.jpg';
+  const MAX_IMAGE = 2000;
+
+  const app = document.getElementById('app');
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  let gh = loadSettings();
+  let data = null;
+  let view = 'general';
+  let dirty = false;
+  let busy = 0;
+  const previews = {}; // bildesti -> lokal blob-URL, så nye bilder vises før Pages er oppdatert
+  let published = null; // innholdet slik det sist ble lagret, for å se hvilke lydfiler som er flyttet eller fjernet
+  const sessionAudio = new Set(); // lydfiler lastet opp siden forrige publisering
+
+  // ---------- Innstillinger ----------
+
+  function loadSettings() {
+    let s = {};
+    try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch (e) {}
+    if (!s.owner && location.hostname.endsWith('.github.io')) {
+      s.owner = location.hostname.split('.')[0];
+      const first = location.pathname.split('/').filter(Boolean)[0];
+      s.repo = first && first !== 'admin' ? first : `${s.owner}.github.io`;
+    }
+    return { owner: '', repo: '', branch: 'main', folder: '', token: '', ...s };
+  }
+  function saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(gh)); } catch (e) {}
+  }
+
+  // ---------- GitHub API ----------
+
+  const repoPath = (p) => [gh.folder.replace(/^\/+|\/+$/g, ''), p].filter(Boolean).join('/');
+  const apiUrl = (p) => `https://api.github.com/repos/${encodeURIComponent(gh.owner)}/${encodeURIComponent(gh.repo)}${p}`;
+
+  async function api(path, opts = {}) {
+    const res = await fetch(apiUrl(path), {
+      ...opts,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${gh.token}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      cache: 'no-store',
+    });
+    if (res.status === 404 && opts.allow404) return null;
+    if (!res.ok) {
+      let msg = `GitHub svarte ${res.status}`;
+      let githubMessage = '';
+      try { const j = await res.json(); if (j.message) { githubMessage = j.message; msg += `: ${j.message}`; } } catch (e) {}
+      const err = new Error(msg); err.status = res.status; err.githubMessage = githubMessage; throw err;
+    }
+    return res.json();
+  }
+
+  const contentsPath = (p) => `/contents/${repoPath(p).split('/').map(encodeURIComponent).join('/')}`;
+
+  async function getFile(p) {
+    return api(`${contentsPath(p)}?ref=${encodeURIComponent(gh.branch)}&t=${Date.now()}`, { allow404: true });
+  }
+
+  // Alle skriv går i kø, ett om gangen, så GitHub ikke får to commits samtidig.
+  let queue = Promise.resolve();
+  function putFile(p, base64, message) {
+    const job = queue.then(async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const existing = await getFile(p);
+        try {
+          return await api(contentsPath(p), {
+            method: 'PUT',
+            body: JSON.stringify({ message, content: base64, branch: gh.branch, ...(existing ? { sha: existing.sha } : {}) }),
+          });
+        } catch (e) {
+          if ((e.status === 409 || e.status === 422) && attempt < 2) { await new Promise((r) => setTimeout(r, 800)); continue; }
+          throw e;
+        }
+      }
+    });
+    queue = job.catch(() => {});
+    return job;
+  }
+
+  function bytesToBase64(bytes) {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+  const textToBase64 = (s) => bytesToBase64(new TextEncoder().encode(s));
+  const base64ToText = (b) => new TextDecoder().decode(Uint8Array.from(atob(b.replace(/\s/g, '')), (c) => c.charCodeAt(0)));
+
+  // ---------- Data ----------
+
+  const i18n = (v) => (v && typeof v === 'object' ? { no: v.no || '', en: v.en || '' } : { no: '', en: v || '' });
+
+  const BOOK_STATUS = ['published', 'upcoming', 'hidden'];
+
+  function normalize(d) {
+    d.site = d.site || {};
+    d.site.name = typeof d.site.name === 'string' ? d.site.name : 'Ellie Cast';
+    ['role', 'tagline', 'quote', 'quoteSource'].forEach((k) => (d.site[k] = i18n(d.site[k])));
+    d.site.shareImage = d.site.shareImage || '';
+    d.about = d.about || {};
+    d.about.image = d.about.image || '';
+    d.about.short = i18n(d.about.short);
+    d.about.text = i18n(d.about.text);
+    d.about.facts = (d.about.facts || []).map(normFact);
+    d.contact = d.contact || {};
+    d.contact.email = d.contact.email || '';
+    d.contact.text = i18n(d.contact.text);
+    d.contact.links = (d.contact.links || []).map((l) => ({ label: l.label || '', url: l.url || '' }));
+    d.books = (d.books || []).map((b) => ({
+      id: '', year: '', pages: '', cover: '', color: '#23203a', ...b,
+      status: BOOK_STATUS.includes(b.status) ? b.status : 'published',
+      title: i18n(b.title), series: i18n(b.series), genre: i18n(b.genre), blurb: i18n(b.blurb), excerpt: i18n(b.excerpt),
+      links: (b.links || []).map((l) => ({ label: i18n(l.label), url: l.url || '' })),
+    }));
+    d.music = d.music || {};
+    d.music.albums = (d.music.albums || []).map((a) => ({
+      id: '', artist: '', year: '', cover: '', ...a,
+      title: i18n(a.title), tag: i18n(a.tag), description: i18n(a.description),
+      tracks: (a.tracks || []).map((tk) => ({ title: tk.title || '', src: tk.src || '', ...(tk.duration ? { duration: tk.duration } : {}) })),
+    }));
+    return d;
+  }
+  function normFact(f) { return { label: i18n(f.label), value: i18n(f.value) }; }
+
+  function getPath(path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), data); }
+  function setPath(path, value) {
+    const keys = path.split('.');
+    const last = keys.pop();
+    const obj = keys.reduce((o, k) => o[k], data);
+    obj[last] = value;
+  }
+
+  const slug = (s, fallback = 'bok') => String(s).toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .replace(/æ/g, 'ae').replace(/ø/g, 'o').replace(/å/g, 'a').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || fallback;
+
+  function markDirty() { dirty = true; updateStatus(); }
+
+  // ---------- Bilder ----------
+
+  async function compress(file) {
+    if (file.type === 'image/gif') return { blob: file, ext: 'gif' }; // beholder animasjon
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_IMAGE / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/webp', 0.88));
+    if (blob && blob.type === 'image/webp') return { blob, ext: 'webp' };
+    const png = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+    return { blob: png, ext: 'png' };
+  }
+
+  async function uploadImage(file, nameHint) {
+    if (!/^image\/(png|jpeg|webp|gif|avif|bmp)$/.test(file.type)) throw new Error(`${file.name} er ikke et bilde som støttes (PNG, JPG, WebP eller GIF)`);
+    busy++; updateStatus(`Laster opp ${file.name} …`);
+    try {
+      const { blob, ext } = await compress(file);
+      const base = slug(nameHint || file.name.replace(/\.[^.]+$/, ''));
+      const path = await backend.upload(blob, base, ext);
+      previews[path] = URL.createObjectURL(blob);
+      return path;
+    } finally {
+      busy--; updateStatus();
+    }
+  }
+
+  // ---------- Lyd ----------
+
+  const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|wav|flac)$/i;
+  const isAudio = (f) => f.type.startsWith('audio/') || AUDIO_EXT.test(f.name);
+  const niceTitle = (name) => name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  async function uploadAudio(file, folder) {
+    if (!ALBUM_ID.test(folder)) throw new Error('Gi albumet et gyldig nettadresse-navn (id) før du laster opp: små bokstaver, tall og bindestrek.');
+    if (!isAudio(file)) throw new Error(`${file.name} er ikke en lydfil som støttes (MP3, M4A, OGG, WAV eller FLAC)`);
+    if (file.size > MAX_AUDIO_MB * 1024 * 1024) throw new Error(`${file.name} er for stor (maks ${MAX_AUDIO_MB} MB). Prøv å lagre den som MP3.`);
+    busy++; updateStatus(`Laster opp ${file.name} …`);
+    try {
+      let ext = (file.name.match(AUDIO_EXT) || [, 'mp3'])[1].toLowerCase();
+      if (ext === 'oga') ext = 'ogg';
+      const base = slug(niceTitle(file.name), 'spor').slice(0, 60).replace(/-+$/, '');
+      const path = await backend.upload(file, base, ext, 'audio', folder);
+      previews[path] = URL.createObjectURL(file);
+      sessionAudio.add(path);
+      return path;
+    } finally {
+      busy--; updateStatus();
+    }
+  }
+
+  // Lengden på sangen i sekunder, så siden kan vise den uten å laste ned lydfilen.
+  function audioDuration(file) {
+    return new Promise((resolve) => {
+      const a = new Audio();
+      const url = URL.createObjectURL(file);
+      const done = (v) => { URL.revokeObjectURL(url); resolve(v); };
+      a.preload = 'metadata';
+      a.onloadedmetadata = () => done(isFinite(a.duration) ? Math.floor(a.duration) : 0);
+      a.onerror = () => done(0);
+      setTimeout(() => done(0), 8000);
+      a.src = url;
+    });
+  }
+
+  // Finner lydfiler som må flyttes (albumet har fått ny id) eller slettes (sporet er fjernet).
+  // Endrer src i `next` til de nye stiene.
+  function planMusicFiles(old, next) {
+    const srcs = (d) => (d?.music?.albums || []).flatMap((a) => a.tracks.map((t) => t.src)).filter((p) => LOCAL_AUDIO.test(p));
+    const owners = {};
+    for (const a of next.music.albums) for (const t of a.tracks) (owners[t.src] ||= new Set()).add(a.id);
+    const taken = new Set(srcs(next));
+    const moved = {};
+    const moves = [];
+    for (const a of next.music.albums) {
+      for (const t of a.tracks) {
+        if (!LOCAL_AUDIO.test(t.src)) continue;
+        const [, folder, file] = t.src.split('/');
+        if (owners[t.src]?.has(folder)) continue; // ligger allerede i riktig mappe
+        if (!moved[t.src]) {
+          let to = `${AUDIO_ROOT}/${a.id}/${file}`;
+          for (let n = 2; taken.has(to); n++) to = `${AUDIO_ROOT}/${a.id}/${file.replace(/(\.[^.]+)?$/, `-${n}$1`)}`;
+          taken.add(to);
+          moved[t.src] = to;
+          moves.push({ from: t.src, to });
+        }
+        t.src = moved[t.src];
+      }
+    }
+    const keep = new Set(srcs(next));
+    const deletes = [...new Set([...srcs(old), ...sessionAudio])].filter((p) => LOCAL_AUDIO.test(p) && !keep.has(p) && !moved[p]);
+    return { moves, deletes };
+  }
+
+  const imgSrc = (p) => !p ? '' : previews[p] || (/^(https?:)?\/\//.test(p) ? p : `../${p}`);
+
+  function pickFiles(multiple, accept = 'image/*') {
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = accept; input.multiple = multiple;
+      input.onchange = () => resolve([...input.files]);
+      input.click();
+    });
+  }
+
+  // ---------- Lagring: GitHub Pages ----------
+
+  const githubBackend = {
+    publishedMsg: 'Publisert! Siden oppdateres om ca. ett minutt ♥',
+
+    start() {
+      if (gh.token && gh.owner && gh.repo) {
+        app.innerHTML = '<p class="center">Kobler til GitHub …</p>';
+        this.connect().catch((err) => this.renderConnect(friendlyError(err)));
+      } else {
+        this.renderConnect();
+      }
+    },
+
+    renderConnect(error) {
+      app.innerHTML = `
+        <div class="connect">
+          <h1 style="font-size:2rem">Admin ♥</h1>
+          <p class="muted">Koble til GitHub-repoet der siden ligger. Dette gjør du bare én gang per nettleser.</p>
+          <div class="box">
+            ${error ? `<div class="error">${esc(error)}</div>` : ''}
+            <form id="connectForm">
+              <div class="grid2">
+                <div class="field"><label for="owner">GitHub-brukernavn</label><input type="text" id="owner" value="${esc(gh.owner)}" required autocomplete="off"></div>
+                <div class="field"><label for="repo">Repo</label><input type="text" id="repo" value="${esc(gh.repo)}" required autocomplete="off" placeholder="brukernavn.github.io"></div>
+                <div class="field"><label for="branch">Branch</label><input type="text" id="branch" value="${esc(gh.branch)}" required></div>
+                <div class="field"><label for="folder">Mappe i repoet (valgfritt)</label><input type="text" id="folder" value="${esc(gh.folder)}" placeholder="tom = roten av repoet"></div>
+              </div>
+              <div class="field"><label for="token">Tilgangsnøkkel (token)</label><input type="password" id="token" value="${esc(gh.token)}" required autocomplete="off"></div>
+              <button class="primary" type="submit" style="width:100%">Koble til</button>
+            </form>
+            <h3>Slik lager du nøkkelen</h3>
+            <ol class="small">
+              <li>Gå til <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a></li>
+              <li>Gi den et navn, f.eks. <code>Admin furry-side</code>, og velg en utløpsdato.</li>
+              <li>Under <b>Repository access</b>: velg <b>Only select repositories</b> og velg repoet til siden.</li>
+              <li>Under <b>Permissions → Repository permissions</b>: sett <b>Contents</b> til <b>Read and write</b>.</li>
+              <li>Trykk <b>Generate token</b>, kopier den og lim den inn her.</li>
+            </ol>
+            <p class="small muted">Nøkkelen lagres bare i denne nettleseren. Del den aldri med noen.</p>
+          </div>
+        </div>`;
+      $('#connectForm').onsubmit = async (e) => {
+        e.preventDefault();
+        gh = {
+          owner: $('#owner').value.trim(), repo: $('#repo').value.trim(), branch: $('#branch').value.trim() || 'main',
+          folder: $('#folder').value.trim(), token: $('#token').value.trim(),
+        };
+        const btn = e.submitter; btn.disabled = true; btn.textContent = 'Kobler til …';
+        try {
+          await this.connect();
+          saveSettings();
+        } catch (err) {
+          this.renderConnect(friendlyError(err));
+        }
+      };
+    },
+
+    async connect() {
+      const repo = await api('');
+      if (repo.permissions && !repo.permissions.push) {
+        const e = new Error('Nøkkelen kan ikke skrive til repoet.'); e.status = 403; e.githubMessage = 'kontoen din har ikke skrivetilgang til dette repoet'; throw e;
+      }
+      const file = await getFile(DATA_PATH);
+      if (file) return ready(JSON.parse(base64ToText(file.content)));
+      // Første gang: start med det som ligger på siden nå.
+      const res = await fetch(`../${DATA_PATH}?v=${Date.now()}`);
+      if (!res.ok) { const e = new Error(`Fant ikke ${repoPath(DATA_PATH)} i repoet.`); e.status = 404; throw e; }
+      ready(await res.json(), true);
+    },
+
+    // Innhold, delingsinfo, flytting og sletting av lydfiler lagres i én commit, så alt skjer samtidig eller ikke i det hele tatt.
+    save(content, files = { moves: [], deletes: [] }) {
+      const job = queue.then(() => this.commit(content, files));
+      queue = job.catch(() => {});
+      return job;
+    },
+
+    async commit(content, files) {
+      const ref = `/git/refs/heads/${gh.branch.split('/').map(encodeURIComponent).join('/')}`;
+      for (let attempt = 0; ; attempt++) {
+        const head = (await api(ref)).object.sha;
+        const baseTree = (await api(`/git/commits/${head}`)).tree.sha;
+        const tree = await api(`/git/trees/${baseTree}?recursive=1`);
+        const blobs = new Map(tree.tree.filter((e) => e.type === 'blob').map((e) => [e.path, e]));
+        const text = (p, body) => ({ path: repoPath(p), mode: '100644', type: 'blob', content: body });
+        const entries = [text(DATA_PATH, JSON.stringify(content, null, 2) + '\n')];
+
+        // Discord, Messenger osv. leser ikke JavaScript, så delingsinfoen må stå rett i index.html.
+        const index = blobs.get(repoPath('index.html'));
+        if (index) {
+          try {
+            const html = base64ToText((await api(`/git/blobs/${index.sha}`)).content);
+            const next = html.replace(/  <!-- deling:start[\s\S]*?<!-- deling:slutt -->/, shareMetaHTML(content));
+            if (next !== html) entries.push(text('index.html', next));
+          } catch (err) {
+            console.warn('Klarte ikke å oppdatere delingsinfo i index.html', err);
+          }
+        }
+
+        for (const { from, to } of files.moves) {
+          const b = blobs.get(repoPath(from));
+          if (!b) continue;
+          entries.push({ path: repoPath(to), mode: b.mode, type: 'blob', sha: b.sha });
+          entries.push({ path: repoPath(from), mode: b.mode, type: 'blob', sha: null });
+        }
+        for (const p of files.deletes) {
+          const b = blobs.get(repoPath(p));
+          if (b) entries.push({ path: repoPath(p), mode: b.mode, type: 'blob', sha: null });
+        }
+
+        const newTree = await api('/git/trees', { method: 'POST', body: JSON.stringify({ base_tree: baseTree, tree: entries }) });
+        const commit = await api('/git/commits', {
+          method: 'POST',
+          body: JSON.stringify({ message: 'Oppdater innhold fra admin-panelet', tree: newTree.sha, parents: [head] }),
+        });
+        try {
+          await api(ref, { method: 'PATCH', body: JSON.stringify({ sha: commit.sha }) });
+          return;
+        } catch (e) {
+          // Noe annet ble lagret i mellomtiden: prøv på nytt oppå den nye versjonen.
+          if ((e.status === 409 || e.status === 422) && attempt < 2) { await new Promise((r) => setTimeout(r, 800)); continue; }
+          throw e;
+        }
+      }
+    },
+
+    async upload(blob, base, ext, kind = 'image', folder = '') {
+      const dir = kind === 'audio' ? `${AUDIO_ROOT}/${folder}` : UPLOAD_DIR;
+      const path = `${dir}/${base}-${Date.now().toString(36)}.${ext}`;
+      await putFile(path, bytesToBase64(new Uint8Array(await blob.arrayBuffer())), `Last opp ${kind === 'audio' ? 'lydfil' : 'bilde'} ${path}`);
+      return path;
+    },
+
+    settingsHTML() {
+      return `
+        <div class="card">
+          <p>Koblet til <b>${esc(gh.owner)}/${esc(gh.repo)}</b> (branch <code>${esc(gh.branch)}</code>${gh.folder ? `, mappe <code>${esc(gh.folder)}</code>` : ''}).</p>
+          <p class="small muted">Hver gang du publiserer blir det lagret en ny versjon i GitHub. Du kan se alle tidligere versjoner under
+            <a href="https://github.com/${encodeURIComponent(gh.owner)}/${encodeURIComponent(gh.repo)}/commits/${encodeURIComponent(gh.branch)}" target="_blank" rel="noopener">Commits på GitHub</a>.</p>
+          <button class="danger" data-act="disconnect">Logg ut (glem nøkkelen i denne nettleseren)</button>
+        </div>`;
+    },
+
+    logout() {
+      gh.token = '';
+      saveSettings();
+      this.renderConnect();
+    },
+  };
+
+  function shareMetaHTML(content) {
+    const siteUrl = new URL('../', location.href).href;
+    const abs = (p) => new URL(p, siteUrl).href;
+    const image = content.site.shareImage || DEFAULT_SHARE_IMAGE;
+    const title = content.site.name || 'Ellie Cast';
+    const desc = content.site.tagline.en || '';
+    const a = (v) => esc(v).replace(/\n/g, ' ');
+    return [
+      '  <!-- deling:start (oppdateres automatisk av admin når du publiserer) -->',
+      `  <meta name="description" content="${a(desc)}">`,
+      '  <meta property="og:type" content="website">',
+      `  <meta property="og:site_name" content="${a(title)}">`,
+      `  <meta property="og:title" content="${a(title)}">`,
+      `  <meta property="og:description" content="${a(desc)}">`,
+      `  <meta property="og:url" content="${a(siteUrl)}">`,
+      `  <meta property="og:image" content="${a(abs(image))}">`,
+      ...(image === DEFAULT_SHARE_IMAGE ? ['  <meta property="og:image:width" content="1200">', '  <meta property="og:image:height" content="630">'] : []),
+      '  <meta name="twitter:card" content="summary_large_image">',
+      '  <!-- deling:slutt -->',
+    ].join('\n');
+  }
+
+  // ---------- Lagring: PHP + SQL ----------
+
+  const phpBackend = {
+    publishedMsg: 'Lagret! Endringene er ute på siden nå ♥',
+    csrf: '',
+    username: '',
+
+    async call(action, { body, form } = {}) {
+      const res = await fetch(`../api/admin.php?action=${action}`, {
+        method: body || form ? 'POST' : 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'X-CSRF-Token': this.csrf, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        body: form || (body ? JSON.stringify(body) : undefined),
+      });
+      let json = null;
+      try { json = await res.json(); } catch (e) {}
+      if (!json || typeof json !== 'object') {
+        const err = new Error(`Serveren svarte ikke som forventet (${res.status}). Prøv igjen, eller sjekk PHP-feilloggen.`);
+        err.status = res.status; throw err;
+      }
+      if (!res.ok || json.error) {
+        const err = new Error(json.error || `Serveren svarte ${res.status}`);
+        err.status = res.status;
+        err.serverMessage = json.error;
+        throw err;
+      }
+      return json;
+    },
+
+    async start() {
+      app.innerHTML = '<p class="center">Laster …</p>';
+      try {
+        const s = await this.call('session');
+        this.csrf = s.csrf || '';
+        if (!s.installed) return this.renderLogin('Siden er ikke installert ennå. Åpne install.php først.');
+        if (!s.loggedIn) return this.renderLogin();
+        this.username = s.username;
+        await this.load();
+      } catch (err) {
+        this.renderLogin(friendlyError(err));
+      }
+    },
+
+    renderLogin(error) {
+      app.innerHTML = `
+        <div class="connect">
+          <h1 style="font-size:2rem">Admin ♥</h1>
+          <p class="muted">Logg inn for å redigere siden.</p>
+          <div class="box">
+            ${error ? `<div class="error">${esc(error)}</div>` : ''}
+            <form id="loginForm">
+              <div class="field"><label for="username">Brukernavn</label><input type="text" id="username" required autocomplete="username"></div>
+              <div class="field"><label for="password">Passord</label><input type="password" id="password" required autocomplete="current-password"></div>
+              <button class="primary" type="submit" style="width:100%">Logg inn</button>
+            </form>
+          </div>
+        </div>`;
+      $('#username').focus();
+      $('#loginForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = e.submitter; btn.disabled = true; btn.textContent = 'Logger inn …';
+        try {
+          const r = await this.call('login', { body: { username: $('#username').value.trim(), password: $('#password').value } });
+          this.csrf = r.csrf;
+          this.username = r.username;
+          await this.load();
+        } catch (err) {
+          this.renderLogin(friendlyError(err));
+        }
+      };
+    },
+
+    async load() {
+      const r = await this.call('data');
+      ready(r.data);
+      // Holder økten i live mens admin er åpent, og henter ny CSRF-nøkkel hvis du har logget inn i en annen fane.
+      clearInterval(this.ping);
+      this.ping = setInterval(() => this.call('session').then((s) => { if (s.csrf) this.csrf = s.csrf; }).catch(() => {}), 5 * 60 * 1000);
+    },
+
+    async save(content, files = { moves: [], deletes: [] }) {
+      await this.call('save', { body: { data: content, files } });
+    },
+
+    async upload(blob, base, ext, kind = 'image', folder = '') {
+      const form = new FormData();
+      form.append('kind', kind);
+      form.append('folder', folder);
+      form.append('file', blob, `${base}.${ext}`);
+      const { path } = await this.call('upload', { form });
+      if (typeof path !== 'string' || !path) throw new Error('Serveren sendte ikke tilbake hvor filen ble lagret.');
+      return path;
+    },
+
+    settingsHTML() {
+      return `
+        <div class="card">
+          <p>Logget inn som <b>${esc(this.username)}</b>. Innholdet lagres i databasen på serveren.</p>
+          <button class="danger" data-act="disconnect">Logg ut</button>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Bytt passord</h3>
+          <form id="pwForm">
+            <div class="field"><label for="pwCurrent">Nåværende passord</label><input type="password" id="pwCurrent" required autocomplete="current-password"></div>
+            <div class="grid2">
+              <div class="field"><label for="pwNew">Nytt passord (minst 10 tegn)</label><input type="password" id="pwNew" required minlength="10" autocomplete="new-password"></div>
+              <div class="field"><label for="pwNew2">Gjenta nytt passord</label><input type="password" id="pwNew2" required minlength="10" autocomplete="new-password"></div>
+            </div>
+            <button class="primary" type="submit">Bytt passord</button>
+          </form>
+        </div>`;
+    },
+
+    afterSettings() {
+      $('#pwForm').onsubmit = async (e) => {
+        e.preventDefault();
+        if ($('#pwNew').value !== $('#pwNew2').value) return toast('De nye passordene er ikke like.', true);
+        try {
+          await this.call('password', { body: { current: $('#pwCurrent').value, new: $('#pwNew').value } });
+          e.target.reset();
+          toast('Passordet er byttet ♥');
+        } catch (err) {
+          toast(friendlyError(err), true);
+        }
+      };
+    },
+
+    async logout() {
+      clearInterval(this.ping);
+      try { await this.call('logout', { body: {} }); } catch (e) {}
+      this.csrf = '';
+      this.renderLogin();
+    },
+  };
+
+  const backend = BACKEND === 'php' ? phpBackend : githubBackend;
+
+  function friendlyError(err) {
+    if (err.serverMessage) return err.serverMessage;
+    if (BACKEND === 'github') {
+      // Ta med GitHub sin egen forklaring, så det er lettere å se hva som er galt.
+      const detail = err.githubMessage ? ` (GitHub: ${err.githubMessage})` : '';
+      if (err.status === 401) return 'Nøkkelen er ugyldig eller utløpt. Lag en ny.' + detail;
+      if (err.status === 403) return 'Nøkkelen får ikke skrive til repoet. Sjekk at repoet er valgt under «Repository access», og at «Contents» står på «Read and write».' + detail;
+      if (err.status === 404) return 'Fant ikke repoet eller filen. Sjekk brukernavn, repo, branch og mappe, og at nøkkelen har tilgang til dette repoet.' + detail;
+    }
+    if (err instanceof TypeError) return 'Fikk ikke kontakt med serveren. Sjekk nettet og prøv igjen.';
+    return err.message || String(err);
+  }
+
+  function ready(content, isDirty = false) {
+    data = normalize(content);
+    published = structuredClone(data);
+    sessionAudio.clear();
+    dirty = isDirty;
+    renderShell();
+  }
+
+  // ---------- Hovedvisning ----------
+
+  function renderShell() {
+    app.innerHTML = `
+      <div class="shell">
+        <aside class="side" id="side">
+          <div class="logo"><img src="../bilder/ikon.svg" alt="">Admin</div>
+          <nav id="sideNav"></nav>
+        </aside>
+        <div class="content">
+          <div class="topbar">
+            <div class="row">
+              <button class="menu-toggle icon" id="menuToggle" aria-label="Meny">☰</button>
+              <span class="status" id="status"><span class="dot"></span><span id="statusText"></span></span>
+            </div>
+            <div class="row">
+              <a class="btn" href="../" target="_blank" rel="noopener">Se siden ↗</a>
+              <button class="primary" id="publishBtn">Publiser</button>
+            </div>
+          </div>
+          <div class="editor" id="editor"></div>
+        </div>
+      </div>`;
+    $('#publishBtn').onclick = publish;
+    $('#menuToggle').onclick = () => $('#side').classList.toggle('open');
+    $('#side').addEventListener('click', (e) => { if (e.target === $('#side')) $('#side').classList.remove('open'); });
+    const editor = $('#editor');
+    editor.addEventListener('input', onInput);
+    editor.addEventListener('change', onInput);
+    editor.addEventListener('click', onAction);
+    editor.addEventListener('dragover', (e) => { const dz = e.target.closest('.dropzone'); if (dz) { e.preventDefault(); dz.classList.add('over'); } });
+    editor.addEventListener('dragleave', (e) => e.target.closest('.dropzone')?.classList.remove('over'));
+    editor.addEventListener('drop', onDrop);
+    $('#sideNav').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.view === 'new') return addBook();
+      if (b.dataset.view === 'new-album') return addAlbum();
+      view = b.dataset.view; renderNav(); renderEditor(); $('#side').classList.remove('open');
+      window.scrollTo(0, 0);
+    });
+    renderNav(); renderEditor(); updateStatus();
+  }
+
+  function renderNav() {
+    const item = (v, label) => `<button data-view="${v}" class="${view === v ? 'active' : ''}">${label}</button>`;
+    const statusNote = (b) => b.status === 'hidden' ? ' <span class="muted small">(skjult)</span>' : b.status === 'upcoming' ? ' <span class="muted small">(kommer)</span>' : '';
+    $('#sideNav').innerHTML = `
+      ${item('general', '🏠 Forside')}
+      ${item('about', '✍️ Om Ellie')}
+      ${item('contact', '✉️ Kontakt')}
+      <div class="group">Bøker</div>
+      ${data.books.map((b, i) => item(`book:${i}`, `📖 ${esc(b.title.en || 'Uten tittel')}${statusNote(b)}`)).join('')}
+      <button data-view="new" class="add">＋ Ny bok</button>
+      <div class="group">Musikk</div>
+      ${data.music.albums.map((a, i) => item(`album:${i}`, `♪ ${esc(a.title.en || 'Uten navn')} <span class="muted small">(${a.tracks.length})</span>`)).join('')}
+      <button data-view="new-album" class="add">＋ Nytt album</button>
+      <div class="group">Annet</div>
+      ${item('settings', '⚙️ Innstillinger')}`;
+  }
+
+  function updateStatus(msg) {
+    const el = $('#status'); if (!el) return;
+    el.className = 'status' + (busy ? ' busy' : dirty ? ' dirty' : '');
+    $('#statusText').textContent = msg || (busy ? 'Jobber …' : dirty ? 'Ulagrede endringer' : 'Alt er publisert');
+    $('#publishBtn').disabled = busy > 0;
+  }
+
+  // ---------- Feltbyggere ----------
+
+  const textField = (label, path, attrs = '') => `
+    <div class="field"><label>${label}</label><input type="text" data-path="${path}" value="${esc(getPath(path))}" ${attrs}></div>`;
+
+  // Siden er bare på engelsk, så tekstene skrives bare på engelsk.
+  const langField = (label, path, multiline) => {
+    const p = `${path}.en`;
+    const input = multiline
+      ? `<textarea data-path="${p}">${esc(getPath(p))}</textarea>`
+      : `<input type="text" data-path="${p}" value="${esc(getPath(p))}">`;
+    return `<div class="field"><label>${label}</label>${input}</div>`;
+  };
+
+  const imageField = (label, path, hint = '') => {
+    const v = getPath(path);
+    return `<div class="field"><label>${label}</label>
+      <div class="image-field">
+        <div class="thumb ${v ? 'has' : ''}" style="${v ? `background-image:url('${esc(imgSrc(v))}')` : ''}">${v ? '' : '🖼️'}</div>
+        <div class="row">
+          <button type="button" data-act="upload" data-path="${path}">${v ? 'Bytt bilde' : 'Last opp bilde'}</button>
+          ${v ? `<button type="button" class="danger" data-act="clear" data-path="${path}">Fjern</button>` : ''}
+        </div>
+        ${hint ? `<p class="small muted" style="margin:0;flex-basis:100%">${hint}</p>` : ''}
+      </div></div>`;
+  };
+
+  const factsEditor = (path) => {
+    const list = getPath(path);
+    return `<div class="field">
+      ${list.map((f, i) => `
+        <div class="list-item">
+          <div><label>Hva</label>
+            <input type="text" data-path="${path}.${i}.label.en" value="${esc(f.label.en)}" placeholder="Favourite food"></div>
+          <div><label>Svar</label>
+            <input type="text" data-path="${path}.${i}.value.en" value="${esc(f.value.en)}"></div>
+          <div class="tools">
+            <button class="icon" data-act="move" data-path="${path}" data-i="${i}" data-d="-1" aria-label="Flytt opp" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button class="icon" data-act="move" data-path="${path}" data-i="${i}" data-d="1" aria-label="Flytt ned" ${i === list.length - 1 ? 'disabled' : ''}>↓</button>
+            <button class="icon danger" data-act="remove" data-path="${path}" data-i="${i}" aria-label="Slett">✕</button>
+          </div>
+        </div>`).join('')}
+      <button data-act="add-fact" data-path="${path}">＋ Legg til fakta</button>
+    </div>`;
+  };
+
+  // ---------- Sider i admin ----------
+
+  // Liste med lenker: bøkene har tospråklig tekst på knappen, kontakt har bare ett navn (f.eks. «TikTok»).
+  const linksEditor = (path, bilingual) => {
+    const list = getPath(path);
+    return `<div class="field">
+      ${list.map((l, i) => `
+        <div class="list-item">
+          <div><label>${bilingual ? 'Tekst på knappen' : 'Navn'}</label>${bilingual ? `
+            <input type="text" data-path="${path}.${i}.label.en" value="${esc(l.label.en)}" placeholder="Buy the book">`
+            : `<input type="text" data-path="${path}.${i}.label" value="${esc(l.label)}" placeholder="Instagram">`}</div>
+          <div><label>Lenke</label><input type="url" data-path="${path}.${i}.url" value="${esc(l.url)}" placeholder="https://…"></div>
+          <div class="tools">
+            <button class="icon" data-act="move" data-path="${path}" data-i="${i}" data-d="-1" aria-label="Flytt opp" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button class="icon" data-act="move" data-path="${path}" data-i="${i}" data-d="1" aria-label="Flytt ned" ${i === list.length - 1 ? 'disabled' : ''}>↓</button>
+            <button class="icon danger" data-act="remove" data-path="${path}" data-i="${i}" aria-label="Slett">✕</button>
+          </div>
+        </div>`).join('')}
+      <button data-act="add-link" data-path="${path}" data-bilingual="${bilingual ? 1 : 0}">＋ Legg til lenke</button>
+      <p class="small muted">Lenker uten adresse vises ikke på siden.</p>
+    </div>`;
+  };
+
+  function renderEditor() {
+    const ed = $('#editor');
+    if (view === 'general') {
+      ed.innerHTML = `
+        <h2>Forside</h2>
+        <div class="card">
+          ${textField('Navn', 'site.name')}
+          ${langField('Tittel under navnet (f.eks. «Author»)', 'site.role')}
+          ${langField('Kort tekst på forsiden', 'site.tagline', true)}
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Sitat</h3>
+          <p class="small muted">Vises i en egen rute på forsiden. Tomt = ingen sitat-rute.</p>
+          ${langField('Sitat', 'site.quote', true)}
+          ${langField('Hvor sitatet er fra', 'site.quoteSource')}
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Deling</h3>
+          <p class="small muted">Dette vises når noen deler lenken til siden på Discord, Messenger, Bluesky og lignende.
+            Navnet og den korte teksten over brukes som tekst.</p>
+          ${imageField('Delingsbilde', 'site.shareImage', 'Liggende bilde, helst 1200 × 630 piksler. Tomt = standardbildet.')}
+        </div>`;
+    } else if (view === 'about') {
+      ed.innerHTML = `
+        <h2>Om Ellie</h2>
+        <div class="card">
+          ${imageField('Bilde', 'about.image', 'Stående bilde passer best. Tomt = «EC» i en bue.')}
+          ${langField('Kort tekst (på forsiden)', 'about.short', true)}
+          ${langField('Hele teksten (på Om Ellie-siden)', 'about.text', true)}
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Fakta</h3>
+          ${factsEditor('about.facts')}
+        </div>`;
+    } else if (view === 'contact') {
+      ed.innerHTML = `
+        <h2>Kontakt</h2>
+        <div class="card">
+          ${textField('E-post', 'contact.email', 'inputmode="email" placeholder="navn@eksempel.no"')}
+          <p class="small muted">Tomt = knappen «Send en e-post» vises nedtonet.</p>
+          ${langField('Tekst', 'contact.text', true)}
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Sosiale medier og andre lenker</h3>
+          ${linksEditor('contact.links', false)}
+        </div>`;
+    } else if (view.startsWith('book:')) {
+      renderBook(+view.slice(5));
+    } else if (view.startsWith('album:')) {
+      renderAlbum(+view.slice(6));
+    } else if (view === 'settings') {
+      ed.innerHTML = `<h2>Innstillinger</h2>${backend.settingsHTML()}`;
+      backend.afterSettings?.();
+    }
+  }
+
+  function renderBook(i) {
+    const b = data.books[i];
+    if (!b) { view = 'general'; renderNav(); return renderEditor(); }
+    const p = `books.${i}`;
+    $('#editor').innerHTML = `
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0">📖 ${esc(b.title.en || 'Ny bok')}</h2>
+        <div class="row">
+          <button class="icon" data-act="move-book" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} title="Flytt opp i rekkefølgen">↑</button>
+          <button class="icon" data-act="move-book" data-i="${i}" data-d="1" ${i === data.books.length - 1 ? 'disabled' : ''} title="Flytt ned i rekkefølgen">↓</button>
+          <a class="btn" href="../#/book/${encodeURIComponent(b.id)}" target="_blank" rel="noopener">Se ↗</a>
+        </div>
+      </div>
+
+      <div class="card">
+        ${langField('Tittel', `${p}.title`)}
+        <div class="grid2">
+          <div class="field"><label>Status</label>
+            <select data-path="${p}.status">
+              <option value="published" ${b.status === 'published' ? 'selected' : ''}>Utgitt</option>
+              <option value="upcoming" ${b.status === 'upcoming' ? 'selected' : ''}>Kommer – får merket «Kommer snart»</option>
+              <option value="hidden" ${b.status === 'hidden' ? 'selected' : ''}>Skjult – vises ikke</option>
+            </select></div>
+          ${textField('Nettadresse-navn (id)', `${p}.id`, 'pattern="[a-z0-9-]+"')}
+          ${textField('Utgitt (år eller dato)', `${p}.year`, 'maxlength="24" placeholder="June 26, 2026"')}
+          ${textField('Sider', `${p}.pages`, 'maxlength="8"')}
+        </div>
+        ${langField('Sjanger', `${p}.genre`)}
+        ${langField('Serie (valgfritt)', `${p}.series`)}
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0">Omslag</h3>
+        <div class="grid2">
+          ${imageField('Omslagsbilde', `${p}.cover`, 'Stående bilde (2:3) passer best.')}
+          <div class="field"><label>Bokfarge</label>
+            <input type="color" data-path="${p}.color" value="${esc(b.color)}">
+            <p class="small muted">Brukes på omslaget når boka ikke har et bilde, og i gløden bak boka.</p></div>
+        </div>
+      </div>
+
+      <div class="card">
+        ${langField('Om boka', `${p}.blurb`, true)}
+        ${langField('Utdrag (valgfritt)', `${p}.excerpt`, true)}
+        <p class="small muted">Hold utdraget kort – et par avsnitt. Tom linje mellom avsnittene.</p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0">Kjøp og les</h3>
+        ${linksEditor(`${p}.links`, true)}
+      </div>
+
+      <div class="card" style="border-color:rgba(194,26,43,.4)">
+        <h3 style="margin-top:0">Slett bok</h3>
+        <p class="small muted">Vil du bare skjule boka en stund? Bruk «Skjult» under Status i stedet.</p>
+        <button class="danger" data-act="delete-book" data-i="${i}">Slett ${esc(b.title.en || 'boka')}</button>
+      </div>`;
+  }
+
+  function renderAlbum(i) {
+    const a = data.music.albums[i];
+    if (!a) { view = 'general'; renderNav(); return renderEditor(); }
+    const p = `music.albums.${i}`;
+    const albums = data.music.albums;
+    $('#editor').innerHTML = `
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0">♪ ${esc(a.title.en || 'Nytt album')}</h2>
+        <div class="row">
+          <button class="icon" data-act="move-album" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} title="Flytt opp i rekkefølgen">↑</button>
+          <button class="icon" data-act="move-album" data-i="${i}" data-d="1" ${i === albums.length - 1 ? 'disabled' : ''} title="Flytt ned i rekkefølgen">↓</button>
+          <a class="btn" href="../#/music" target="_blank" rel="noopener">Se ↗</a>
+        </div>
+      </div>
+
+      <div class="card">
+        ${langField('Albumnavn', `${p}.title`)}
+        <div class="grid2">
+          ${textField('Artist', `${p}.artist`)}
+          ${textField('År', `${p}.year`, 'maxlength="12"')}
+        </div>
+        ${langField('Merkelapp (valgfritt)', `${p}.tag`)}
+        ${langField('Om albumet (valgfritt)', `${p}.description`, true)}
+        ${imageField('Albumcover', `${p}.cover`, 'Kvadratisk bilde passer best. Tomt = et fargerikt cover med albumnavnet lages automatisk.')}
+        ${textField('Nettadresse-navn (id)', `${p}.id`, 'pattern="[a-z0-9]+(-[a-z0-9]+)*"')}
+        <p class="small muted">Brukes også som mappenavn for lydfilene: <code>musikk/${esc(a.id || '…')}/</code>. Endrer du den, flyttes filene når du publiserer.</p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0">Spor</h3>
+        ${a.tracks.map((tk, j) => `
+          <div class="track-item">
+            <span class="track-num">${j + 1}</span>
+            <input type="text" data-path="${p}.tracks.${j}.title" value="${esc(tk.title)}" placeholder="Sangtittel" aria-label="Tittel på spor ${j + 1}">
+            <audio controls preload="none" src="${esc(imgSrc(tk.src))}"></audio>
+            <div class="tools">
+              <button class="icon" data-act="move" data-path="${p}.tracks" data-i="${j}" data-d="-1" aria-label="Flytt opp" ${j === 0 ? 'disabled' : ''}>↑</button>
+              <button class="icon" data-act="move" data-path="${p}.tracks" data-i="${j}" data-d="1" aria-label="Flytt ned" ${j === a.tracks.length - 1 ? 'disabled' : ''}>↓</button>
+              <button class="icon danger" data-act="remove" data-path="${p}.tracks" data-i="${j}" aria-label="Fjern spor">✕</button>
+            </div>
+          </div>`).join('')}
+        <div class="dropzone" data-act="add-tracks" data-kind="audio" data-path="${p}.tracks" tabindex="0" role="button" style="min-height:120px;margin-top:10px">
+          <div><div style="font-size:2rem">♪</div>Klikk eller dra lydfiler hit<br><span class="small">MP3, M4A, OGG, WAV eller FLAC · maks ${MAX_AUDIO_MB} MB per fil</span></div>
+        </div>
+        <p class="small muted">Tittelen hentes fra filnavnet, men du kan endre den. MP3 gir minst filer og virker overalt.</p>
+      </div>
+
+      <div class="card" style="border-color:rgba(194,26,43,.4)">
+        <h3 style="margin-top:0">Slett album</h3>
+        <button class="danger" data-act="delete-album" data-i="${i}">Slett ${esc(a.title.en || 'albumet')}</button>
+      </div>`;
+  }
+
+  // ---------- Hendelser ----------
+
+  function onInput(e) {
+    const el = e.target;
+    const path = el.dataset.path;
+    if (!path) return;
+    let value = el.value;
+    if (path.endsWith('.id')) {
+      value = slug(value, path.startsWith('music.') ? 'album' : 'bok');
+      if (e.type === 'change') el.value = value;
+    }
+    if (getPath(path) === value) return;
+    setPath(path, value);
+    markDirty();
+    if (/^books\.\d+\.(title\.en|status)$|^music\.albums\.\d+\.title\.en$/.test(path)) {
+      renderNav();
+      if (view.startsWith('book:') && e.type === 'change') renderEditor();
+    }
+  }
+
+  async function onAction(e) {
+    const btn = e.target.closest('[data-act]');
+    if (!btn || btn.disabled) return;
+    const { act, path } = btn.dataset;
+    const i = +btn.dataset.i;
+    const d = +btn.dataset.d;
+    const list = path ? getPath(path) : null;
+    const refresh = () => { markDirty(); renderNav(); renderEditor(); };
+
+    switch (act) {
+      case 'upload': {
+        const [file] = await pickFiles(false);
+        if (!file) return;
+        try {
+          setPath(path, await uploadImage(file, imageHint(path)));
+          refresh();
+        } catch (err) { toast(friendlyError(err), true); }
+        break;
+      }
+      case 'clear': setPath(path, ''); refresh(); break;
+      case 'add-fact': list.push({ label: { no: '', en: '' }, value: { no: '', en: '' } }); refresh(); break;
+      case 'add-color': list.push('#ffffff'); refresh(); break;
+      case 'remove':
+        if (path.endsWith('.gallery') && !confirm('Fjerne bildet fra galleriet?')) return;
+        if (path.endsWith('.tracks') && !confirm(`Fjerne «${list[i].title || 'sporet'}» fra albumet?\n\nLydfilen slettes også når du publiserer.`)) return;
+        list.splice(i, 1); refresh(); break;
+      case 'move': {
+        const j = i + d;
+        if (j < 0 || j >= list.length) return;
+        [list[i], list[j]] = [list[j], list[i]]; refresh(); break;
+      }
+      case 'move-book': {
+        const j = i + d;
+        const list2 = data.books;
+        [list2[i], list2[j]] = [list2[j], list2[i]];
+        view = `book:${j}`; refresh(); break;
+      }
+      case 'add-link':
+        list.push(btn.dataset.bilingual === '1' ? { label: { no: '', en: '' }, url: '' } : { label: '', url: '' });
+        refresh(); break;
+      case 'move-album': {
+        const j = i + d;
+        const albums = data.music.albums;
+        [albums[i], albums[j]] = [albums[j], albums[i]];
+        view = `album:${j}`; refresh(); break;
+      }
+      case 'add-tracks': {
+        const files = await pickFiles(true, 'audio/*,.mp3,.m4a,.aac,.ogg,.oga,.wav,.flac');
+        await addTracks(path, files);
+        break;
+      }
+      case 'delete-album': {
+        const a = data.music.albums[i];
+        if (!confirm(`Slette albumet «${a.title.en || 'uten navn'}»?\n\nLydfilene i albumet slettes også når du publiserer.`)) return;
+        data.music.albums.splice(i, 1);
+        view = 'general'; refresh(); break;
+      }
+      case 'add-gallery': {
+        const files = await pickFiles(true);
+        await addToGallery(path, files);
+        break;
+      }
+      case 'delete-book': {
+        const b = data.books[i];
+        if (!confirm(`Slette «${b.title.en || 'boka'}» for godt? (Du kan fortsatt hente den tilbake fra GitHub-historikken.)`)) return;
+        data.books.splice(i, 1);
+        view = 'general'; refresh(); break;
+      }
+      case 'disconnect':
+        if (dirty && !confirm('Du har ulagrede endringer. Logge ut likevel?')) return;
+        dirty = false; data = null; backend.logout(); break;
+    }
+  }
+
+  function imageHint(path) {
+    const m = path.match(/^books\.(\d+)/);
+    if (m) return data.books[+m[1]].id || 'bok';
+    const a = path.match(/^music\.albums\.(\d+)/);
+    if (a) return data.music.albums[+a[1]].id || 'album';
+    return path.split('.')[0];
+  }
+
+  async function addTracks(path, files) {
+    const audios = files.filter(isAudio);
+    if (!audios.length) { if (files.length) toast('Fant ingen lydfiler blant filene.', true); return; }
+    const list = getPath(path);
+    let done = 0;
+    busy++; updateStatus(); // Publiser er låst til alle sporene er lagt til
+    try {
+      for (const file of audios) {
+        try {
+          const duration = await audioDuration(file);
+          const src = await uploadAudio(file, imageHint(path));
+          list.push({ title: niceTitle(file.name), src, ...(duration ? { duration } : {}) });
+          done++;
+          markDirty(); renderNav(); renderEditor();
+        } catch (err) { toast(friendlyError(err), true); }
+      }
+    } finally {
+      busy--; updateStatus();
+    }
+    if (done) toast(`${done} spor lastet opp. Husk å trykke Publiser!`);
+  }
+
+  async function addToGallery(path, files) {
+    const images = files.filter((f) => f.type.startsWith('image/'));
+    if (!images.length) return;
+    const list = getPath(path);
+    let done = 0;
+    for (const file of images) {
+      try {
+        const src = await uploadImage(file, imageHint(path));
+        list.push({ src, caption: { no: '', en: '' } });
+        done++;
+        markDirty(); renderEditor();
+      } catch (err) { toast(friendlyError(err), true); }
+    }
+    if (done) toast(`${done} bilde${done > 1 ? 'r' : ''} lastet opp. Husk å trykke Publiser!`);
+  }
+
+  function onDrop(e) {
+    const dz = e.target.closest('.dropzone');
+    if (!dz) return;
+    e.preventDefault();
+    dz.classList.remove('over');
+    if (dz.dataset.kind === 'audio') addTracks(dz.dataset.path, [...e.dataTransfer.files]);
+    else addToGallery(dz.dataset.path, [...e.dataTransfer.files]);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.classList?.contains('dropzone')) e.target.click();
+    if ((e.ctrlKey || e.metaKey) && e.key === 's' && data) { e.preventDefault(); publish(); }
+  });
+
+  function addBook() {
+    const n = data.books.length + 1;
+    data.books.push({
+      id: `bok-${n}`, title: { no: 'Ny bok', en: 'New book' }, status: 'hidden', year: '', pages: '', cover: '', color: '#23203a',
+      series: { no: '', en: '' }, genre: { no: '', en: '' }, blurb: { no: '', en: '' }, excerpt: { no: '', en: '' }, links: [],
+    });
+    view = `book:${data.books.length - 1}`;
+    markDirty(); renderNav(); renderEditor();
+    toast('Ny bok lagt til som «Skjult» – bytt status når den skal vises.');
+  }
+
+  function addAlbum() {
+    const n = data.music.albums.length + 1;
+    data.music.albums.push({
+      id: `album-${n}`, title: { no: 'Nytt album', en: 'New album' }, artist: 'Ellie Cast', tag: { no: '', en: '' },
+      year: String(new Date().getFullYear()), cover: '', description: { no: '', en: '' }, tracks: [],
+    });
+    view = `album:${data.music.albums.length - 1}`;
+    markDirty(); renderNav(); renderEditor();
+  }
+
+  // ---------- Publisering ----------
+
+  function validate() {
+    const ids = new Set();
+    for (const b of data.books) {
+      if (!b.title.no.trim() && !b.title.en.trim()) return 'En bok mangler tittel.';
+      if (!b.id) return `«${b.title.en}» mangler nettadresse-navn (id).`;
+      if (ids.has(b.id)) return `To bøker har samme id: «${b.id}». Gi dem forskjellige.`;
+      ids.add(b.id);
+    }
+    const albumIds = new Set();
+    for (const a of data.music.albums) {
+      if (!a.id) return `Albumet «${a.title.en}» mangler nettadresse-navn (id).`;
+      if (!ALBUM_ID.test(a.id) || a.id.length > 80) return `Id-en «${a.id}» kan bare ha små bokstaver, tall og bindestrek (f.eks. «mitt-album»).`;
+      if (albumIds.has(a.id)) return `To album har samme id: «${a.id}». Gi dem forskjellige.`;
+      albumIds.add(a.id);
+    }
+    return null;
+  }
+
+  async function publish() {
+    if (busy) return;
+    const problem = validate();
+    if (problem) return toast(problem, true);
+    busy++; updateStatus('Publiserer …');
+    try {
+      const next = structuredClone(data);
+      const files = planMusicFiles(published, next);
+      await backend.save(next, files);
+      // Bare stiene til flyttede lydfiler endres i det du redigerer, så endringer gjort mens den publiserte går ikke tapt.
+      const moved = Object.fromEntries(files.moves.map((m) => [m.from, m.to]));
+      for (const a of data.music.albums) {
+        for (const t of a.tracks) {
+          if (!moved[t.src]) continue;
+          if (previews[t.src]) previews[moved[t.src]] = previews[t.src];
+          t.src = moved[t.src];
+        }
+      }
+      published = next;
+      sessionAudio.clear();
+      dirty = false;
+      if (files.moves.length) renderEditor();
+      toast(backend.publishedMsg);
+    } catch (err) {
+      toast(friendlyError(err), true);
+    } finally {
+      busy--; updateStatus();
+    }
+  }
+
+  window.addEventListener('beforeunload', (e) => {
+    if (dirty || busy) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // ---------- Toast ----------
+
+  let toastTimer;
+  function toast(msg, isErr) {
+    const el = $('#toast');
+    el.textContent = msg;
+    el.className = 'toast show' + (isErr ? ' err' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), isErr ? 6000 : 3500);
+  }
+
+  // ---------- Start ----------
+
+  backend.start();
+})();
