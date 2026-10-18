@@ -351,9 +351,11 @@
     document.querySelectorAll('.reveal').forEach((el) => (io ? io.observe(el) : el.classList.add('in')));
   }
 
-  const fine = matchMedia('(hover: hover) and (pointer: fine)').matches && !matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (fine) {
+  // Vipper bare for mus. Sjekker selve bevegelsen, fordi noen PC-er (berøringsskjerm, tegnebrett)
+  // sier at de ikke har mus selv om de har det.
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
     main.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'mouse') return;
       const el = e.target.closest('[data-tilt]');
       if (!el) return;
       const r = el.getBoundingClientRect();

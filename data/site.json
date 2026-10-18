@@ -83,10 +83,9 @@
       "links": [
         {
           "label": {
-            "no": "",
-            "en": "Buy the book"
+            "en": "Buy on Amazon"
           },
-          "url": ""
+          "url": "https://www.amazon.com/Fragmented-Collector-Ellie-Cast-ebook/dp/B0H6CP82M5"
         }
       ]
     }
