@@ -103,7 +103,7 @@
 
   function bookCard(b, i = 0) {
     return `
-      <a class="book-card reveal" href="#/book/${encodeURIComponent(b.id)}" style="--d:${i * 70}ms">
+      <a class="book-card reveal" href="books/${encodeURIComponent(b.id)}/" style="--d:${i * 70}ms">
         <div class="book-wrap">${bookHTML(b)}${b.status === 'upcoming' ? `<span class="badge">${t('coming')}</span>` : ''}</div>
         <h3>${esc(tr(b.title))}</h3>
         ${metaLine(b) ? `<p class="meta">${metaLine(b)}</p>` : ''}
@@ -122,12 +122,12 @@
           <h1>${esc(s.name).replace(/ (\S+)$/, ' <em>$1</em>')}</h1>
           <p class="lead">${esc(tr(s.tagline))}</p>
           <div class="actions">
-            <a class="btn" href="#/books">${t('see_books')} <span aria-hidden="true">→</span></a>
-            <a class="btn ghost" href="#/about">${t('about_me')}</a>
+            <a class="btn" href="books/">${t('see_books')} <span aria-hidden="true">→</span></a>
+            <a class="btn ghost" href="about/">${t('about_me')}</a>
           </div>
         </div>
         ${f ? `
-        <a class="hero-book reveal" href="#/book/${encodeURIComponent(f.id)}" style="--d:150ms" data-tilt>
+        <a class="hero-book reveal" href="books/${encodeURIComponent(f.id)}/" style="--d:150ms" data-tilt>
           <div class="hero-halo" style="--b:${safeColor(f.color)}"></div>
           ${bookHTML(f)}
         </a>` : ''}
@@ -135,7 +135,7 @@
 
       <section class="bento">
         ${f ? `
-        <a class="tile tile-book glass reveal" href="#/book/${encodeURIComponent(f.id)}">
+        <a class="tile tile-book glass reveal" href="books/${encodeURIComponent(f.id)}/">
           <span class="pill">${t('latest')}</span>
           <h2>${esc(tr(f.title))}</h2>
           <p>${esc(tr(f.blurb).split(/\n\s*\n/)[0])}</p>
@@ -146,7 +146,7 @@
           <blockquote>${esc(tr(s.quote))}</blockquote>
           ${tr(s.quoteSource) ? `<figcaption>${esc(tr(s.quoteSource))}</figcaption>` : ''}
         </figure>` : ''}
-        <a class="tile tile-about glass reveal" href="#/about" style="--d:160ms">
+        <a class="tile tile-about glass reveal" href="about/" style="--d:160ms">
           <div class="avatar">${a.image ? `<img src="${esc(a.image)}" alt="">` : '<span>EC</span>'}</div>
           <div>
             <h3>${t('about_me')}</h3>
@@ -168,10 +168,10 @@
         const cb = books().find(counting);
         return cb ? `
       <section class="coming glass reveal">
-        <a class="coming-cover" href="#/book/${encodeURIComponent(cb.id)}">${bookHTML(cb)}</a>
+        <a class="coming-cover" href="books/${encodeURIComponent(cb.id)}/">${bookHTML(cb)}</a>
         <div>
           <span class="pill accent">${t('coming_book')}</span>
-          <h2><a href="#/book/${encodeURIComponent(cb.id)}">${esc(tr(cb.title))}</a></h2>
+          <h2><a href="books/${encodeURIComponent(cb.id)}/">${esc(tr(cb.title))}</a></h2>
           ${countdownHTML(cb)}
         </div>
       </section>` : '';
@@ -180,7 +180,7 @@
       <section class="section">
         <div class="section-head">
           <h2>${t('books')}</h2>
-          <a class="link" href="#/books">${t('all_books')} →</a>
+          <a class="link" href="books/">${t('all_books')} →</a>
         </div>
         <div class="shelf">${books().map(bookCard).join('')}</div>
       </section>
@@ -189,7 +189,7 @@
       <section class="section">
         <div class="section-head">
           <h2>${t('latest_news')}</h2>
-          <a class="link" href="#/news">${t('all_news')} →</a>
+          <a class="link" href="news/">${t('all_news')} →</a>
         </div>
         <div class="news-grid">${posts().slice(0, 3).map(newsCard).join('')}</div>
       </section>` : ''}
@@ -198,7 +198,7 @@
       <section class="section">
         <div class="section-head">
           <h2>${t('upcoming_events')}</h2>
-          <a class="link" href="#/events">${t('all_events')} →</a>
+          <a class="link" href="events/">${t('all_events')} →</a>
         </div>
         <div class="events">${upcomingEvents().slice(0, 3).map(eventHTML).join('')}</div>
       </section>` : ''}
@@ -269,7 +269,7 @@
 
   function newsCard(p, i = 0) {
     return `
-      <a class="news-card glass reveal" href="#/news/${encodeURIComponent(p.id)}" style="--d:${i * 70}ms">
+      <a class="news-card glass reveal" href="news/${encodeURIComponent(p.id)}/" style="--d:${i * 70}ms">
         ${p.image ? `<div class="news-img"><img src="${esc(p.image)}" alt="" loading="lazy"></div>` : ''}
         <div class="news-body">
           ${p.date ? `<time datetime="${esc(p.date)}">${esc(fmtDate(p.date))}</time>` : ''}
@@ -288,7 +288,7 @@
       const link = p.link && safeUrl(p.link.url) ? p.link : null;
       const more = posts().filter((x) => x !== p).slice(0, 3);
       return `
-        <a class="back" href="#/news">${t('back_news')}</a>
+        <a class="back" href="news/">${t('back_news')}</a>
         <article class="post glass reveal">
           ${p.date ? `<time datetime="${esc(p.date)}">${esc(fmtDate(p.date))}</time>` : ''}
           <h1>${esc(tr(p.title))}</h1>
@@ -301,7 +301,7 @@
         </article>
         ${more.length ? `
         <section class="section">
-          <div class="section-head"><h2>${t('more_news')}</h2><a class="link" href="#/news">${t('all_news')} →</a></div>
+          <div class="section-head"><h2>${t('more_news')}</h2><a class="link" href="news/">${t('all_news')} →</a></div>
           <div class="news-grid">${more.map(newsCard).join('')}</div>
         </section>` : ''}
         ${newsletterHTML()}`;
@@ -340,7 +340,7 @@
         </div>
         <div>
           ${action}
-          <p class="nl-note">${t('nl_note')} <a href="#/privacy">${t('privacy_link')}</a></p>
+          <p class="nl-note">${t('nl_note')} <a href="privacy/">${t('privacy_link')}</a></p>
         </div>
       </section>`;
   }
@@ -375,7 +375,7 @@
     const warnings = tr(b.warnings).split(/\n|,/).map((w) => w.trim()).filter(Boolean);
     const reviews = (b.reviews || []).filter((r) => tr(r.quote));
     return `
-      <a class="back" href="#/books">${t('back')}</a>
+      <a class="back" href="books/">${t('back')}</a>
       <article class="book-page">
         <div class="book-page-cover reveal" data-tilt><div class="hero-halo" style="--b:${safeColor(b.color)}"></div>${bookHTML(b)}</div>
         <div class="book-page-info glass reveal" style="--d:120ms">
@@ -458,7 +458,7 @@
     const tracks = playable(a);
     return `
       <article class="album-card reveal" style="--d:${ai * 60}ms">
-        <a class="album-link" href="#/music/${encodeURIComponent(a.id)}">
+        <a class="album-link" href="music/${encodeURIComponent(a.id)}/">
           <div class="cover">${albumCover(a)}</div>
           <h3>${esc(tr(a.title))}</h3>
           <p class="meta">${[countText(tracks.length), totalMin(tracks) ? `${totalMin(tracks)} ${t('minutes')}` : ''].filter(Boolean).join(' · ')}</p>
@@ -496,7 +496,7 @@
       const refs = albumRefs(a);
       listContext.album = refs;
       return `
-        <a class="back" href="#/music">${t('all_music')}</a>
+        <a class="back" href="music/">${t('all_music')}</a>
         <section class="album-hero glass reveal">
           <div class="cover big">${albumCover(a)}</div>
           <div>
@@ -523,19 +523,32 @@
   }
 
   function viewNotFound() {
-    return `<div class="page-head"><h1>${t('not_found')}</h1><a class="btn" href="#/">${t('go_home')}</a></div>`;
+    return `<div class="page-head"><h1>${t('not_found')}</h1><a class="btn" href="./">${t('go_home')}</a></div>`;
   }
 
-  // ---------- Adresser og språk ----------
+  // ---------- Adresser ----------
+  // Vanlige adresser uten # (…/ellie-cast/books/the-fragmented-collector/). <base> i <head> peker på roten av siden,
+  // så alle lenker og bilder kan skrives som «books/…», «bilder/…» uansett hvilken side man står på.
+  // Hver adresse finnes også som egen fil, så de virker når de deles og når man laster siden på nytt.
+  const ROOT = new URL(document.baseURI);
+  const pathParts = () => decodeURI(location.pathname).slice(decodeURI(ROOT.pathname).length).replace(/index\.html$/, '').split('/').filter(Boolean);
+
+  // Gamle lenker med # (f.eks. …/#/book/x) sendes til den nye adressen.
+  if (/^#\/./.test(location.hash)) {
+    const old = location.hash.slice(2).split('/').filter(Boolean);
+    if (old[0] === 'book') old[0] = 'books';
+    history.replaceState(null, '', new URL(old.map(encodeURIComponent).join('/') + '/', ROOT).href);
+  }
+
   let lastPath = null;
   function render() {
     if (!data) return;
-    const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+    const parts = pathParts();
     listContext = {};
     let route = 'home', html, title = '';
     if (!parts.length) html = viewHome();
-    else if (parts[0] === 'books') { route = 'books'; html = viewBooks(); title = t('books'); }
-    else if (parts[0] === 'book' && parts[1]) {
+    else if (parts[0] === 'books' && !parts[1]) { route = 'books'; html = viewBooks(); title = t('books'); }
+    else if (parts[0] === 'books') {
       route = 'books';
       const id = decodeURIComponent(parts[1]);
       html = viewBook(id);
@@ -556,7 +569,7 @@
     else if (parts[0] === 'events') { route = 'events'; html = viewEvents(); title = t('events'); }
     else if (parts[0] === 'privacy') { route = ''; html = viewPrivacy(); title = t('privacy'); }
     else if (parts[0] === 'about') { route = 'about'; html = viewAbout(); title = t('about_me'); }
-    else if (parts[0] === 'contact') { route = 'contact'; html = viewHome(); }
+    else if (parts[0] === 'contact') { route = 'contact'; html = contactHTML(); title = t('contact'); }
     else { route = ''; html = viewNotFound(); }
 
     main.innerHTML = `<div class="view">${html}</div>`;
@@ -571,8 +584,7 @@
     document.title = title ? `${title} · ${data.site.name}` : `${data.site.name} · ${tr(data.site.role)}`;
 
     const path = parts.join('/');
-    if (route === 'contact') $('#contact')?.scrollIntoView({ behavior: lastPath === null ? 'auto' : 'smooth' });
-    else if (path !== lastPath) window.scrollTo(0, 0);
+    if (path !== lastPath) window.scrollTo(0, 0);
     lastPath = path;
   }
 
@@ -589,6 +601,21 @@
     updateThemeBtn();
     updatePlayerText();
   }
+
+  // Lenker inne på siden byttes uten å laste siden på nytt, så musikken spiller videre.
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest('a[href]');
+    if (!a || a.target || a.hasAttribute('download')) return;
+    const u = new URL(a.href);
+    if (u.origin !== location.origin || !u.pathname.startsWith(ROOT.pathname)) return;
+    const rel = u.pathname.slice(ROOT.pathname.length);
+    if (/^admin(\/|$)/.test(rel) || /\.[a-z0-9]+$/i.test(rel.replace(/index\.html$/, ''))) return; // admin og filer (mp3, xml …)
+    if (u.hash && u.pathname === location.pathname) return; // hopp på samme side, f.eks. «Skip to content»
+    e.preventDefault();
+    if (u.href !== location.href) history.pushState(null, '', u.href);
+    render();
+  });
 
   // ---------- Inntoning og 3D-vipp ----------
 
@@ -628,7 +655,7 @@
     if (cp) {
       // Lenken går til bokas egen side, som viser omslaget når den deles på Discord, Messenger osv.
       e.preventDefault();
-      const url = new URL(cp.getAttribute('href'), location.href.split('#')[0]).href;
+      const url = cp.href;
       navigator.clipboard?.writeText(url).then(() => toast(t('copied')), () => { location.href = url; });
       return;
     }
@@ -736,7 +763,7 @@
     player.hidden = false;
     document.body.classList.add('has-player');
     $('#plCover').innerHTML = albumCover(r.album);
-    $('#plAlbum').href = `#/music/${encodeURIComponent(r.album.id)}`;
+    $('#plAlbum').href = `music/${encodeURIComponent(r.album.id)}/`;
     $('#plDur').textContent = r.track.duration ? fmt(r.track.duration) : '0:00';
     updatePlayerText();
     markPlaying();
@@ -893,7 +920,7 @@
       data = json;
       applyStaticText();
       render();
-      window.addEventListener('hashchange', render);
+      window.addEventListener('popstate', render);
     })
     .catch(() => { main.innerHTML = `<div class="page-head"><h1>${t('load_error')}</h1></div>`; });
 })();

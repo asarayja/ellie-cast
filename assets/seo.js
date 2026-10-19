@@ -1,7 +1,7 @@
-// Lager filene som gjør at Google (og Discord, Messenger osv.) finner og forstår innholdet:
-//  - books/<id>/, news/<id>/, news/ og events/: vanlige sider som kan leses uten JavaScript
-//  - sitemap.xml: liste over sidene
-//  - strukturdata i index.html: forteller søkemotorer at dette er en forfatter og hvilke bøker som finnes
+// Lager én fil per adresse på siden (books/, books/<id>/, news/, events/, music/, about/ …), så adressene
+// virker uten # og Google, Discord, Messenger osv. kan lese innholdet uten JavaScript.
+// Hver fil er en kopi av index.html med egen tittel, delingsinfo, strukturdata og ferdig innhold i <main>.
+// Når siden lastes, tar assets/app.js over som vanlig (musikkspilleren osv.).
 // Brukes av admin når du publiserer. Kan også kjøres med node: require('./assets/seo.js').
 
 (function (root) {
@@ -22,6 +22,7 @@
   const posts = (c) => (c.news || []).filter((p) => ID.test(p.id || '') && tr(p.title)).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const events = (c) => (c.events || []).filter((e) => DAY.test(e.date || '') && tr(e.title)).sort((a, b) => a.date.localeCompare(b.date));
   const albums = (c) => (c.music?.albums || []).filter((a) => ID.test(a.id || '') && (a.tracks || []).some((t) => t.src));
+  const newsletterOn = (c) => { const n = c.newsletter || {}; return (n.provider === 'buttondown' && /^[A-Za-z0-9_-]+$/.test(n.buttondown || '')) || (n.provider === 'link' && !!safeUrl(n.url)); };
   const bookPath = (b) => `books/${b.id}/`;
   const postPath = (p) => `news/${p.id}/`;
 
@@ -38,6 +39,7 @@
     return dt ? dt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : (d || '');
   };
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const dur = (s) => s ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '';
 
   // ---------- Strukturdata ----------
 
@@ -103,20 +105,33 @@
     };
   }
 
+  function albumLd(c, a, site) {
+    const tracks = a.tracks.filter((t) => t.src);
+    return {
+      '@type': 'MusicAlbum', name: tr(a.title), url: `${site}music/${a.id}/`,
+      byArtist: { '@type': 'MusicGroup', name: a.artist || c.site.name },
+      ...(a.year ? { datePublished: String(a.year) } : {}),
+      ...(a.cover ? { image: new URL(a.cover, site).href } : {}),
+      numTracks: tracks.length,
+      track: tracks.map((t) => ({ '@type': 'MusicRecording', name: t.title || tr(a.title), ...(t.duration ? { duration: `PT${Math.floor(t.duration / 60)}M${t.duration % 60}S` } : {}) })),
+    };
+  }
+
+  const ldBlock = (graph) => [
+    '  <!-- data:start (oppdateres automatisk av admin når du publiserer) -->',
+    '  <script type="application/ld+json">',
+    json({ '@context': 'https://schema.org', '@graph': graph }).replace(/^/gm, '  '),
+    '  </script>',
+    '  <!-- data:slutt -->',
+  ].join('\n');
+
   // Blokken mellom <!-- data:start --> og <!-- data:slutt --> i index.html
   function indexLd(c, site) {
-    const graph = [
+    return ldBlock([
       { '@type': 'WebSite', '@id': `${site}#website`, url: site, name: c.site.name },
       personLd(c, site),
       ...visibleBooks(c).map((b) => bookLd(c, b, site)),
-    ];
-    return [
-      '  <!-- data:start (oppdateres automatisk av admin når du publiserer) -->',
-      '  <script type="application/ld+json">',
-      json({ '@context': 'https://schema.org', '@graph': graph }).replace(/^/gm, '  '),
-      '  </script>',
-      '  <!-- data:slutt -->',
-    ].join('\n');
+    ]);
   }
 
   function sitemap(c, site) {
@@ -128,6 +143,7 @@
       ...posts(c).map((p) => site + postPath(p)),
       ...(events(c).length ? [`${site}events/`] : []),
       ...(albums(c).length ? [`${site}music/`] : []),
+      ...albums(c).map((a) => `${site}music/${a.id}/`),
       `${site}about/`,
       `${site}contact/`,
     ];
@@ -135,201 +151,158 @@
       urls.map((u) => `  <url><loc>${esc(u)}</loc></url>`).join('\n') + '\n</urlset>\n';
   }
 
-  // ---------- Felles ramme for sidene ----------
-  // up = veien tilbake til roten («../» eller «../../»)
+  // ---------- Felles: lag en side ut fra index.html ----------
 
-  function page(c, site, { up, path, title, desc, image, type = 'website', ld, active, body }) {
-    const name = c.site.name;
+  const DATA_BLOCK = /  <!-- data:start[\s\S]*?<!-- data:slutt -->/;
+  const SHARE_BLOCK = /  <!-- deling:start[\s\S]*?<!-- deling:slutt -->/;
+
+  function page(c, site, template, { path, base, title, desc, image, type = 'website', ld, body, noindex }) {
     const url = site + path;
-    const img = image || new URL('bilder/deling.jpg', site).href;
-    const nav = [
-      ['books', 'Books', 'books/'],
-      ...(posts(c).length ? [['news', 'News', 'news/']] : []),
-      ...(events(c).length ? [['events', 'Events', 'events/']] : []),
-      ...(albums(c).length ? [['music', 'Music', 'music/']] : []),
-      ['about', 'About Ellie', 'about/'],
-      ['contact', 'Contact', 'contact/'],
-    ];
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Denne siden lages automatisk av admin når du publiserer. Endringer her blir overskrevet. -->
-  <title>${esc(title)}</title>
-  <meta name="description" content="${esc(desc)}">
-  <link rel="canonical" href="${esc(url)}">
-  <meta property="og:type" content="${type}">
-  <meta property="og:site_name" content="${esc(name)}">
-  <meta property="og:title" content="${esc(title)}">
-  <meta property="og:description" content="${esc(desc)}">
-  <meta property="og:url" content="${esc(url)}">
-  <meta property="og:image" content="${esc(img)}">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="theme-color" content="#f8edf3" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1b1936" media="(prefers-color-scheme: dark)">
-  <script>try{var t=localStorage.getItem('ec-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
-  <script type="application/ld+json">
-${json({ '@context': 'https://schema.org', '@graph': [...ld, personLd(c, site)] })}
-  </script>
-  <link rel="icon" href="${up}bilder/ikon.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="${up}assets/style.css">
-</head>
-<body>
-  <a class="skip" href="#main">Skip to content</a>
-  <div class="glow" aria-hidden="true"><i></i><i></i></div>
-
-  <header class="topbar">
-    <div class="topbar-inner glass">
-      <a class="brand" href="${up}"><span class="mono" aria-hidden="true">EC</span><span>${esc(name)}</span></a>
-      <nav class="nav" id="nav">
-        ${nav.map(([k, label, href]) => `<a href="${up}${href}"${k === active ? ' class="active" aria-current="page"' : ''}>${label}</a>`).join('\n        ')}
-      </nav>
-      <div class="tools">
-        <button class="tool menu-btn" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="nav"><span></span><span></span></button>
-      </div>
-    </div>
-  </header>
-
-  <main id="main" tabindex="-1">
-${body}
-  </main>
-
-  <footer class="footer">
-    <div class="footer-inner glass">
-      <span class="footer-name">${esc(name)}</span>
-      <span class="footer-meta">${esc(tr(c.site.role) || 'Author')}</span>
-    </div>
-  </footer>
-  <script>
-    (function () {
-      var nav = document.getElementById('nav'), btn = document.getElementById('menuBtn');
-      btn.addEventListener('click', function () { btn.setAttribute('aria-expanded', nav.classList.toggle('open')); });
-    })();
-  </script>
-</body>
-</html>
-`;
+    const img = image || new URL(c.site.shareImage || 'bilder/deling.jpg', site).href;
+    const meta = [
+      '  <!-- deling:start (lages automatisk av admin når du publiserer) -->',
+      `  <meta name="description" content="${esc(desc)}">`,
+      noindex ? '  <meta name="robots" content="noindex">' : `  <link rel="canonical" href="${esc(url)}">`,
+      `  <meta property="og:type" content="${type}">`,
+      `  <meta property="og:site_name" content="${esc(c.site.name)}">`,
+      `  <meta property="og:title" content="${esc(title)}">`,
+      `  <meta property="og:description" content="${esc(desc)}">`,
+      `  <meta property="og:url" content="${esc(url)}">`,
+      `  <meta property="og:image" content="${esc(img)}">`,
+      '  <meta name="twitter:card" content="summary_large_image">',
+      '  <!-- deling:slutt -->',
+    ].join('\n');
+    // Funksjoner i replace, så $ i teksten ikke blir tolket som spesialtegn
+    let html = template
+      .replace(/<base href="[^"]*">/, () => `<base href="${esc(base || '../'.repeat(path.split('/').filter(Boolean).length))}">`)
+      .replace(/<title>[\s\S]*?<\/title>/, () => `<title>${esc(title)}</title>`)
+      .replace(SHARE_BLOCK, () => meta)
+      .replace(DATA_BLOCK, () => ldBlock([...ld, personLd(c, site)]))
+      .replace(/(<main id="main"[^>]*>)[\s\S]*?(<\/main>)/, (_, open, close) => `${open}\n    <div class="view">${body}\n    </div>\n  ${close}`);
+    // Menypunktene som er skjult til det finnes innhold
+    if (posts(c).length) html = html.replace(/(data-route="news"[^>]*?) hidden>/, '$1>');
+    if (events(c).length) html = html.replace(/(data-route="events"[^>]*?) hidden>/, '$1>');
+    if (albums(c).length) html = html.replace(/(data-route="music"[^>]*?) hidden>/, '$1>');
+    return html;
   }
+
+  const coverHTML = (c, b) => `<div class="book" style="--b:${safeColor(b.color)}">${b.cover
+    ? `<img src="${esc(b.cover)}" alt="${esc(tr(b.title))}">`
+    : `<div class="gen-cover"><span class="gc-title">${esc(tr(b.title))}</span><span class="gc-author">${esc(c.site.name)}</span></div>`}</div>`;
 
   // ---------- Bøker ----------
 
-  function bookPage(c, b, site) {
-    const up = '../../';
-    const name = c.site.name;
+  function booksList(c, site, tpl) {
+    const list = visibleBooks(c);
+    return page(c, site, tpl, {
+      path: 'books/',
+      title: `Books by ${c.site.name}`,
+      desc: `All books by ${c.site.name}: ${list.map((b) => tr(b.title)).join(', ')}.`,
+      ld: [{ '@type': 'CollectionPage', name: `Books by ${c.site.name}`, url: `${site}books/`,
+        mainEntity: { '@type': 'ItemList', itemListElement: list.map((b, i) => ({ '@type': 'ListItem', position: i + 1, url: site + bookPath(b), name: tr(b.title) })) } }],
+      body: `
+      <div class="page-head"><span class="pill">${esc(c.site.name)}</span><h1>The books</h1></div>
+      <div class="shelf large">${list.map((b) => `
+        <a class="book-card" href="${bookPath(b)}">
+          <div class="book-wrap">${coverHTML(c, b)}${b.status === 'upcoming' ? '<span class="badge">Coming soon</span>' : ''}</div>
+          <h3>${esc(tr(b.title))}</h3>
+          ${b.year ? `<p class="meta">${b.status === 'upcoming' ? 'Coming ' : ''}${esc(b.year)}</p>` : ''}
+        </a>`).join('')}
+      </div>`,
+    });
+  }
+
+  function bookPage(c, b, site, tpl) {
     const title = tr(b.title);
-    const rel = (p) => /^(https?:)?\/\//.test(p) ? p : up + p;
     const links = (b.links || []).filter((l) => safeUrl(l.url));
     const facts = [['Series', tr(b.series)], [b.status === 'upcoming' ? 'Coming' : 'Published', b.year], ['Genre', tr(b.genre)], ['Pages', b.pages]].filter(([, v]) => v);
     const warnings = tr(b.warnings).split(/\n|,/).map((w) => w.trim()).filter(Boolean);
     const reviews = (b.reviews || []).filter((r) => tr(r.quote));
-    const cover = b.cover
-      ? `<img src="${esc(rel(b.cover))}" alt="${esc(title)}">`
-      : `<div class="gen-cover"><span class="gc-title">${esc(title)}</span><span class="gc-author">${esc(name)}</span></div>`;
-    return page(c, site, {
-      up, path: bookPath(b), active: 'books', type: 'book',
-      title: `${title} by ${name}`,
-      desc: oneLine(tr(b.blurb)) || `${title} by ${name}.`,
+    return page(c, site, tpl, {
+      path: bookPath(b), type: 'book',
+      title: `${title} by ${c.site.name}`,
+      desc: oneLine(tr(b.blurb)) || `${title} by ${c.site.name}.`,
       image: b.cover ? new URL(b.cover, site).href : '',
       ld: [bookLd(c, b, site)],
       body: `
-    <a class="back" href="../">← All books</a>
-    <article class="book-page">
-      <div class="book-page-cover"><div class="hero-halo" style="--b:${safeColor(b.color)}"></div><div class="book" style="--b:${safeColor(b.color)}">${cover}</div></div>
-      <div class="book-page-info glass">
-        ${b.status === 'upcoming' ? '<span class="pill accent">Coming soon</span>' : ''}
-        <h1>${esc(title)}</h1>
-        <p class="byline">${esc(name)}</p>
-        <div class="prose">${paragraphs(tr(b.blurb))}</div>
-        ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}
-        ${warnings.length ? `
-        <details class="cw">
-          <summary>Content warnings</summary>
-          <p class="muted">Some readers like to know before they start. Open to see the list.</p>
-          <ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>
-        </details>` : ''}
-        <div class="actions">
-          ${links.map((l, i) => `<a class="btn ${i ? 'ghost' : ''}" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">${esc(tr(l.label))}</a>`).join('')}
-          <a class="btn ghost" href="${up}#/book/${encodeURIComponent(b.id)}">More on ${esc(name)}'s website →</a>
+      <a class="back" href="books/">← All books</a>
+      <article class="book-page">
+        <div class="book-page-cover"><div class="hero-halo" style="--b:${safeColor(b.color)}"></div>${coverHTML(c, b)}</div>
+        <div class="book-page-info glass">
+          ${b.status === 'upcoming' ? '<span class="pill accent">Coming soon</span>' : ''}
+          <h1>${esc(title)}</h1>
+          <p class="byline">${esc(c.site.name)}</p>
+          <div class="prose">${paragraphs(tr(b.blurb))}</div>
+          ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}
+          ${warnings.length ? `
+          <details class="cw">
+            <summary>Content warnings</summary>
+            <ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>
+          </details>` : ''}
+          ${links.length ? `<div class="actions">${links.map((l, i) => `<a class="btn ${i ? 'ghost' : ''}" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">${esc(tr(l.label))}</a>`).join('')}</div>` : ''}
         </div>
-      </div>
-    </article>
-    ${tr(b.excerpt) ? `
-    <section class="excerpt">
-      <span class="pill">Excerpt</span>
-      <div class="excerpt-text">${paragraphs(tr(b.excerpt))}</div>
-    </section>` : ''}
-    ${reviews.length ? `
-    <section class="section">
-      <div class="section-head"><h2>What readers say</h2></div>
-      <div class="reviews">${reviews.map((r) => `
-        <figure class="review glass">
-          ${+r.stars ? `<div class="stars" role="img" aria-label="${+r.stars} out of 5 stars">${'★'.repeat(+r.stars)}<span>${'★'.repeat(5 - +r.stars)}</span></div>` : ''}
-          <blockquote>${esc(tr(r.quote))}</blockquote>
-          ${r.source ? `<figcaption>${esc(r.source)}</figcaption>` : ''}
-        </figure>`).join('')}
-      </div>
-    </section>` : ''}`,
+      </article>
+      ${tr(b.excerpt) ? `
+      <section class="excerpt">
+        <span class="pill">Excerpt</span>
+        <div class="excerpt-text">${paragraphs(tr(b.excerpt))}</div>
+      </section>` : ''}
+      ${reviews.length ? `
+      <section class="section">
+        <div class="section-head"><h2>What readers say</h2></div>
+        <div class="reviews">${reviews.map((r) => `
+          <figure class="review glass">
+            ${+r.stars ? `<div class="stars" role="img" aria-label="${+r.stars} out of 5 stars">${'★'.repeat(+r.stars)}<span>${'★'.repeat(5 - +r.stars)}</span></div>` : ''}
+            <blockquote>${esc(tr(r.quote))}</blockquote>
+            ${r.source ? `<figcaption>${esc(r.source)}</figcaption>` : ''}
+          </figure>`).join('')}
+        </div>
+      </section>` : ''}`,
     });
   }
 
   // ---------- Nyheter ----------
 
-  function newsCard(p, up) {
-    const img = p.image ? (/^(https?:)?\/\//.test(p.image) ? p.image : up + p.image) : '';
-    return `
-      <a class="news-card glass" href="${up}${postPath(p)}">
-        ${img ? `<div class="news-img"><img src="${esc(img)}" alt="" loading="lazy"></div>` : ''}
-        <div class="news-body">
-          ${p.date ? `<time datetime="${esc(p.date)}">${esc(niceDate(p.date))}</time>` : ''}
-          <h3>${esc(tr(p.title))}</h3>
-          ${tr(p.text) ? `<p>${esc(oneLine(tr(p.text).split(/\n\s*\n/)[0], 180))}</p>` : ''}
-          <span class="link">Read more →</span>
-        </div>
-      </a>`;
-  }
+  const newsCard = (p) => `
+        <a class="news-card glass" href="${postPath(p)}">
+          ${p.image ? `<div class="news-img"><img src="${esc(p.image)}" alt="" loading="lazy"></div>` : ''}
+          <div class="news-body">
+            ${p.date ? `<time datetime="${esc(p.date)}">${esc(niceDate(p.date))}</time>` : ''}
+            <h3>${esc(tr(p.title))}</h3>
+            ${tr(p.text) ? `<p>${esc(oneLine(tr(p.text).split(/\n\s*\n/)[0], 180))}</p>` : ''}
+            <span class="link">Read more →</span>
+          </div>
+        </a>`;
 
-  function newsList(c, site) {
-    const up = '../';
-    return page(c, site, {
-      up, path: 'news/', active: 'news',
+  function newsList(c, site, tpl) {
+    return page(c, site, tpl, {
+      path: 'news/',
       title: `News · ${c.site.name}`,
       desc: `News from ${c.site.name}: new books, sneak peeks and updates.`,
       ld: [{ '@type': 'CollectionPage', name: `News · ${c.site.name}`, url: `${site}news/` }],
       body: `
-    <div class="page-head"><span class="pill">${esc(c.site.name)}</span><h1>News</h1></div>
-    <div class="news-grid">${posts(c).map((p) => newsCard(p, up)).join('')}</div>`,
+      <div class="page-head"><span class="pill">${esc(c.site.name)}</span><h1>News</h1></div>
+      <div class="news-grid">${posts(c).map(newsCard).join('')}</div>`,
     });
   }
 
-  function postPage(c, p, site) {
-    const up = '../../';
+  function postPage(c, p, site, tpl) {
     const link = safeUrl(p.link?.url) ? p.link : null;
-    const img = p.image ? (/^(https?:)?\/\//.test(p.image) ? p.image : up + p.image) : '';
-    const more = posts(c).filter((x) => x !== p).slice(0, 3);
-    return page(c, site, {
-      up, path: postPath(p), active: 'news', type: 'article',
+    return page(c, site, tpl, {
+      path: postPath(p), type: 'article',
       title: `${tr(p.title)} · ${c.site.name}`,
       desc: oneLine(tr(p.text)) || tr(p.title),
       image: p.image ? new URL(p.image, site).href : '',
       ld: [postLd(c, p, site)],
       body: `
-    <a class="back" href="../">← All news</a>
-    <article class="post glass">
-      ${p.date ? `<time datetime="${esc(p.date)}">${esc(niceDate(p.date))}</time>` : ''}
-      <h1>${esc(tr(p.title))}</h1>
-      ${img ? `<img class="post-img" src="${esc(img)}" alt="">` : ''}
-      <div class="prose">${paragraphs(tr(p.text))}</div>
-      ${link ? `<div class="actions"><a class="btn" href="${esc(safeUrl(link.url))}" target="_blank" rel="noopener">${esc(tr(link.label) || 'Read more')}</a></div>` : ''}
-    </article>
-    ${more.length ? `
-    <section class="section">
-      <div class="section-head"><h2>More news</h2><a class="link" href="../">All news →</a></div>
-      <div class="news-grid">${more.map((x) => newsCard(x, up)).join('')}</div>
-    </section>` : ''}`,
+      <a class="back" href="news/">← All news</a>
+      <article class="post glass">
+        ${p.date ? `<time datetime="${esc(p.date)}">${esc(niceDate(p.date))}</time>` : ''}
+        <h1>${esc(tr(p.title))}</h1>
+        ${p.image ? `<img class="post-img" src="${esc(p.image)}" alt="">` : ''}
+        <div class="prose">${paragraphs(tr(p.text))}</div>
+        ${link ? `<div class="actions"><a class="btn" href="${esc(safeUrl(link.url))}" target="_blank" rel="noopener">${esc(tr(link.label) || 'Read more')}</a></div>` : ''}
+      </article>`,
     });
   }
 
@@ -340,181 +313,208 @@ ${body}
     const link = safeUrl(e.link?.url) ? e.link : null;
     const meta = [e.time, e.place].filter(Boolean).map(esc).join(' · ');
     return `
-      <article class="event glass">
-        <time class="ev-date" datetime="${esc(e.date)}">
-          <span class="ev-mon">${d.toLocaleDateString('en-US', { month: 'short' })}</span>
-          <span class="ev-day">${d.getDate()}</span>
-          <span class="ev-year">${d.getFullYear()}</span>
-        </time>
-        <div class="ev-body">
-          <h3>${esc(tr(e.title))}</h3>
-          ${meta ? `<p class="ev-meta">${meta}</p>` : ''}
-          ${tr(e.text) ? `<div class="prose">${paragraphs(tr(e.text))}</div>` : ''}
-          ${link ? `<a class="btn small" href="${esc(safeUrl(link.url))}" target="_blank" rel="noopener">${esc(tr(link.label) || 'Read more')}</a>` : ''}
-        </div>
-      </article>`;
+        <article class="event glass">
+          <time class="ev-date" datetime="${esc(e.date)}">
+            <span class="ev-mon">${d.toLocaleDateString('en-US', { month: 'short' })}</span>
+            <span class="ev-day">${d.getDate()}</span>
+            <span class="ev-year">${d.getFullYear()}</span>
+          </time>
+          <div class="ev-body">
+            <h3>${esc(tr(e.title))}</h3>
+            ${meta ? `<p class="ev-meta">${meta}</p>` : ''}
+            ${tr(e.text) ? `<div class="prose">${paragraphs(tr(e.text))}</div>` : ''}
+            ${link ? `<a class="btn small" href="${esc(safeUrl(link.url))}" target="_blank" rel="noopener">${esc(tr(link.label) || 'Read more')}</a>` : ''}
+          </div>
+        </article>`;
   }
 
-  function eventsPage(c, site) {
-    const up = '../';
+  function eventsPage(c, site, tpl) {
     const now = today();
     const coming = events(c).filter((e) => e.date >= now);
     const past = events(c).filter((e) => e.date < now).reverse();
-    return page(c, site, {
-      up, path: 'events/', active: 'events',
+    return page(c, site, tpl, {
+      path: 'events/',
       title: `Events · ${c.site.name}`,
       desc: coming.length
         ? `Upcoming events with ${c.site.name}: ${coming.slice(0, 3).map((e) => `${tr(e.title)} (${niceDate(e.date)})`).join(', ')}.`
         : `Readings, signings and live events with ${c.site.name}.`,
       ld: events(c).map((e) => eventLd(c, e, site)),
       body: `
-    <div class="page-head"><span class="pill">${esc(c.site.name)}</span><h1>Events</h1></div>
-    ${coming.length ? `<div class="events">${coming.map(eventHTML).join('')}</div>` : '<p class="muted">No upcoming events right now. Check back soon.</p>'}
-    ${past.length ? `
-    <section class="section">
-      <div class="section-head"><h2>Past events</h2></div>
-      <div class="events past">${past.map(eventHTML).join('')}</div>
-    </section>` : ''}`,
+      <div class="page-head"><span class="pill">${esc(c.site.name)}</span><h1>Events</h1></div>
+      ${coming.length ? `<div class="events">${coming.map(eventHTML).join('')}</div>` : '<p class="muted">No upcoming events right now. Check back soon.</p>'}
+      ${past.length ? `
+      <section class="section">
+        <div class="section-head"><h2>Past events</h2></div>
+        <div class="events past">${past.map(eventHTML).join('')}</div>
+      </section>` : ''}`,
     });
   }
 
-  // ---------- Bokoversikt, Om, Musikk og Kontakt ----------
+  // ---------- Musikk ----------
 
-  const img = (p, up) => /^(https?:)?\/\//.test(p) ? p : up + p;
+  const ALBUM_COLORS = [['#7b6cff', '#3fa9ff'], ['#ff7ab0', '#7b6cff'], ['#3fd0c9', '#3f6bff'], ['#ffb86b', '#ff6b8b'], ['#9b8cff', '#2c2a5a']];
+  function albumCover(c, a) {
+    if (a.cover) return `<img src="${esc(a.cover)}" alt="${esc(tr(a.title))}">`;
+    const [c1, c2] = ALBUM_COLORS[Math.max(0, (c.music.albums || []).indexOf(a)) % ALBUM_COLORS.length];
+    return `<div class="gen-album" style="--c1:${c1};--c2:${c2}"><span class="ga-note" aria-hidden="true">♪</span><span class="ga-title">${esc(tr(a.title))}</span></div>`;
+  }
 
-  function booksList(c, site) {
-    const up = '../';
-    const list = visibleBooks(c);
-    return page(c, site, {
-      up, path: 'books/', active: 'books',
-      title: `Books by ${c.site.name}`,
-      desc: `All books by ${c.site.name}: ${list.map((b) => tr(b.title)).join(', ')}.`,
-      ld: [{ '@type': 'CollectionPage', name: `Books by ${c.site.name}`, url: `${site}books/`,
-        mainEntity: { '@type': 'ItemList', itemListElement: list.map((b, i) => ({ '@type': 'ListItem', position: i + 1, url: site + bookPath(b), name: tr(b.title) })) } }],
+  function musicPage(c, site, tpl) {
+    const list = albums(c);
+    return page(c, site, tpl, {
+      path: 'music/',
+      title: `Music · ${c.site.name}`,
+      desc: `Music by ${c.site.name}: ${list.map((a) => tr(a.title)).join(', ')}.`,
+      ld: list.map((a) => albumLd(c, a, site)),
       body: `
-    <div class="page-head"><span class="pill">${esc(c.site.name)}</span><h1>The books</h1></div>
-    <div class="shelf large">${list.map((b) => `
-      <a class="book-card" href="${b.id}/">
-        <div class="book-wrap">
-          <div class="book" style="--b:${safeColor(b.color)}">${b.cover
-            ? `<img src="${esc(img(b.cover, up))}" alt="${esc(tr(b.title))}" loading="lazy">`
-            : `<div class="gen-cover"><span class="gc-title">${esc(tr(b.title))}</span><span class="gc-author">${esc(c.site.name)}</span></div>`}</div>
-          ${b.status === 'upcoming' ? '<span class="badge">Coming soon</span>' : ''}
-        </div>
-        <h3>${esc(tr(b.title))}</h3>
-        ${b.year ? `<p class="meta">${b.status === 'upcoming' ? 'Coming ' : ''}${esc(b.year)}</p>` : ''}
-      </a>`).join('')}
-    </div>`,
+      <div class="page-head"><span class="pill">${esc(c.site.name)}</span><h1>Music</h1>
+        <p class="muted">Listen while you read. The music keeps playing as you move around the site.</p></div>
+      <div class="album-grid">${list.map((a) => `
+        <article class="album-card">
+          <a class="album-link" href="music/${a.id}/">
+            <div class="cover">${albumCover(c, a)}</div>
+            <h3>${esc(tr(a.title))}</h3>
+          </a>
+        </article>`).join('')}
+      </div>`,
     });
   }
 
-  function aboutPage(c, site) {
-    const up = '../';
+  function albumPage(c, a, site, tpl) {
+    const tracks = a.tracks.filter((t) => t.src);
+    return page(c, site, tpl, {
+      path: `music/${a.id}/`, type: 'music.album',
+      title: `${tr(a.title)} · ${c.site.name}`,
+      desc: oneLine(tr(a.description)) || `${tr(a.title)} by ${a.artist || c.site.name}: ${tracks.map((t) => t.title).filter(Boolean).join(', ')}.`,
+      image: a.cover ? new URL(a.cover, site).href : '',
+      ld: [albumLd(c, a, site)],
+      body: `
+      <a class="back" href="music/">← All music</a>
+      <section class="album-hero glass">
+        <div class="cover big">${albumCover(c, a)}</div>
+        <div>
+          <h1>${esc(tr(a.title))}</h1>
+          <p class="muted">${[a.artist, a.year].filter(Boolean).map(esc).join(' · ')}</p>
+          ${tr(a.description) ? `<div class="prose">${paragraphs(tr(a.description))}</div>` : ''}
+        </div>
+      </section>
+      <ol class="tracklist glass">${tracks.map((t, i) => `
+        <li><span class="track"><span class="num">${i + 1}</span><span class="t"><span class="tt">${esc(t.title || tr(a.title))}</span></span><span class="d">${dur(t.duration)}</span></span></li>`).join('')}
+      </ol>`,
+    });
+  }
+
+  // ---------- Om, kontakt, personvern og «finnes ikke» ----------
+
+  function aboutPage(c, site, tpl) {
     const a = c.about || {};
     const facts = (a.facts || []).filter((f) => tr(f.label) && tr(f.value));
-    return page(c, site, {
-      up, path: 'about/', active: 'about', type: 'profile',
+    return page(c, site, tpl, {
+      path: 'about/', type: 'profile',
       title: `About ${c.site.name}`,
       desc: oneLine(tr(a.short) || tr(a.text)) || `About ${c.site.name}.`,
       image: a.image ? new URL(a.image, site).href : '',
       ld: [{ '@type': 'ProfilePage', name: `About ${c.site.name}`, url: `${site}about/`, mainEntity: { '@id': `${site}#author` } }],
       body: `
-    <section class="about">
-      <div class="portrait">${a.image ? `<img src="${esc(img(a.image, up))}" alt="${esc(c.site.name)}">` : '<span>EC</span>'}</div>
-      <div class="about-text">
-        <span class="pill">About Ellie</span>
-        <h1>${esc(c.site.name)}</h1>
-        <div class="prose">${paragraphs(tr(a.text))}</div>
-        ${facts.length ? `<dl class="facts">${facts.map((f) => `<div><dt>${esc(tr(f.label))}</dt><dd>${esc(tr(f.value))}</dd></div>`).join('')}</dl>` : ''}
-        <div class="actions"><a class="btn" href="../contact/">Contact</a><a class="btn ghost" href="../books/">See the books</a></div>
-      </div>
-    </section>`,
+      <section class="about">
+        <div class="portrait">${a.image ? `<img src="${esc(a.image)}" alt="${esc(c.site.name)}">` : '<span>EC</span>'}</div>
+        <div class="about-text">
+          <span class="pill">About Ellie</span>
+          <h1>${esc(c.site.name)}</h1>
+          <div class="prose">${paragraphs(tr(a.text))}</div>
+          ${facts.length ? `<dl class="facts">${facts.map((f) => `<div><dt>${esc(tr(f.label))}</dt><dd>${esc(tr(f.value))}</dd></div>`).join('')}</dl>` : ''}
+        </div>
+      </section>`,
     });
   }
 
-  const ALBUM_COLORS = [['#7b6cff', '#3fa9ff'], ['#ff7ab0', '#7b6cff'], ['#3fd0c9', '#3f6bff'], ['#ffb86b', '#ff6b8b'], ['#9b8cff', '#2c2a5a']];
-  const dur = (s) => s ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '';
-
-  function musicPage(c, site) {
-    const up = '../';
-    const list = albums(c);
-    return page(c, site, {
-      up, path: 'music/', active: 'music',
-      title: `Music · ${c.site.name}`,
-      desc: `Music by ${c.site.name}: ${list.map((a) => tr(a.title)).join(', ')}.`,
-      ld: list.map((a) => ({
-        '@type': 'MusicAlbum', name: tr(a.title), url: `${site}music/`,
-        byArtist: { '@type': 'MusicGroup', name: a.artist || c.site.name },
-        ...(a.year ? { datePublished: String(a.year) } : {}),
-        ...(a.cover ? { image: new URL(a.cover, site).href } : {}),
-        numTracks: a.tracks.filter((t) => t.src).length,
-        track: a.tracks.filter((t) => t.src).map((t) => ({ '@type': 'MusicRecording', name: t.title || tr(a.title), ...(t.duration ? { duration: `PT${Math.floor(t.duration / 60)}M${t.duration % 60}S` } : {}) })),
-      })),
-      body: `
-    <div class="page-head"><span class="pill">${esc(c.site.name)}</span><h1>Music</h1>
-      <p class="muted">Listen while you read. The music keeps playing as you move around the website.</p></div>
-    ${list.map((a, i) => {
-      const [c1, c2] = ALBUM_COLORS[i % ALBUM_COLORS.length];
-      const tracks = a.tracks.filter((t) => t.src);
-      return `
-    <section class="album-hero glass" style="margin-bottom:22px">
-      <div class="cover big">${a.cover ? `<img src="${esc(img(a.cover, up))}" alt="${esc(tr(a.title))}">`
-        : `<div class="gen-album" style="--c1:${c1};--c2:${c2}"><span class="ga-note" aria-hidden="true">♪</span><span class="ga-title">${esc(tr(a.title))}</span></div>`}</div>
-      <div>
-        <h2 style="font-size:clamp(2.2rem,5vw,3.2rem)">${esc(tr(a.title))}</h2>
-        <p class="muted">${[a.artist, a.year].filter(Boolean).map(esc).join(' · ')}</p>
-        ${tr(a.description) ? `<div class="prose">${paragraphs(tr(a.description))}</div>` : ''}
-        <ol class="prose">${tracks.map((t) => `<li>${esc(t.title || tr(a.title))}${t.duration ? ` <span class="muted">· ${dur(t.duration)}</span>` : ''}</li>`).join('')}</ol>
-        <div class="actions"><a class="btn" href="${up}#/music/${encodeURIComponent(a.id)}">▶ Listen on the website</a></div>
-      </div>
-    </section>`;
-    }).join('')}`,
-    });
-  }
-
-  function contactPage(c, site) {
-    const up = '../';
+  function contactSection(c) {
     const k = c.contact || {};
     const email = /^[^\s@]+@[^\s@]+$/.test(k.email || '') ? k.email : '';
     const links = (k.links || []).filter((l) => safeUrl(l.url));
-    return page(c, site, {
-      up, path: 'contact/', active: 'contact',
+    return `
+      <section class="contact glass" id="contact">
+        <span class="pill">Contact</span>
+        <h2>Say hello</h2>
+        <p>${esc(tr(k.text))}</p>
+        <div class="actions center">
+          ${email ? `<a class="btn" href="mailto:${esc(email)}">Send an email</a>` : ''}
+          ${links.map((l) => `<a class="btn ghost" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('')}
+        </div>
+      </section>`;
+  }
+
+  function contactPage(c, site, tpl) {
+    return page(c, site, tpl, {
+      path: 'contact/',
       title: `Contact ${c.site.name}`,
-      desc: oneLine(tr(k.text)) || `How to get in touch with ${c.site.name}.`,
+      desc: oneLine(tr(c.contact?.text)) || `How to get in touch with ${c.site.name}.`,
       ld: [{ '@type': 'ContactPage', name: `Contact ${c.site.name}`, url: `${site}contact/`, mainEntity: { '@id': `${site}#author` } }],
+      body: contactSection(c),
+    });
+  }
+
+  function privacyPage(c, site, tpl) {
+    const n = c.newsletter || {};
+    const email = /^[^\s@]+@[^\s@]+$/.test(c.contact?.email || '') ? c.contact.email : '';
+    const parts = [
+      'This website does not use cookies, ads or tracking.',
+      'Your browser remembers a few small settings, like light or dark theme and the music volume. They are stored only on your own device and are never sent anywhere.',
+      newsletterOn(c) ? `If you sign up for the newsletter, your email address is stored by ${n.provider === 'buttondown' ? 'Buttondown' : 'the newsletter service'} and used only to send news about the books. Every email has a link to unsubscribe, and you can ask to have your address deleted at any time.` : '',
+      'The fonts are loaded from Google Fonts, and the site is hosted on GitHub Pages. Like most websites, they can see your IP address when the page loads.',
+      email ? `Questions? Send an email to ${email}.` : '',
+    ].filter(Boolean);
+    return page(c, site, tpl, {
+      path: 'privacy/',
+      title: `Privacy · ${c.site.name}`,
+      desc: `How ${c.site.name}'s website handles your data.`,
+      ld: [{ '@type': 'WebPage', name: `Privacy · ${c.site.name}`, url: `${site}privacy/` }],
       body: `
-    <section class="contact glass" style="margin-top:20px">
-      <span class="pill">Contact</span>
-      <h1 style="font-size:clamp(3rem,8vw,5rem)">Say hello</h1>
-      <p>${esc(tr(k.text))}</p>
-      <div class="actions center">
-        ${email ? `<a class="btn" href="mailto:${esc(email)}">Send an email</a>` : ''}
-        ${links.map((l) => `<a class="btn ghost" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('')}
-      </div>
-    </section>`,
+      <div class="page-head"><span class="pill">${esc(c.site.name)}</span><h1>Privacy</h1></div>
+      <div class="prose privacy">${parts.map((x) => `<p>${esc(x)}</p>`).join('')}</div>`,
+    });
+  }
+
+  // GitHub viser 404.html for adresser som ikke finnes. Den vet ikke hvor dypt den står, så <base> må være fast.
+  function notFoundPage(c, site, tpl) {
+    return page(c, site, tpl, {
+      path: '404.html', base: new URL(site).pathname, noindex: true,
+      title: `Page not found · ${c.site.name}`,
+      desc: `Page not found.`,
+      ld: [],
+      body: `
+      <div class="page-head"><h1>Couldn't find that page.</h1><a class="btn" href="./">Go home</a></div>`,
     });
   }
 
   // ---------- Alle filene ----------
 
-  // { sti: innhold } for alt som skal ligge i repoet
-  function files(c, site) {
-    const out = { 'sitemap.xml': sitemap(c, site), 'books/index.html': booksList(c, site), 'about/index.html': aboutPage(c, site), 'contact/index.html': contactPage(c, site) };
-    if (albums(c).length) out['music/index.html'] = musicPage(c, site);
-    for (const b of visibleBooks(c)) out[`${bookPath(b)}index.html`] = bookPage(c, b, site);
+  // { sti: innhold } for alt som skal ligge i repoet. template = innholdet i index.html.
+  function files(c, site, template) {
+    const out = { 'sitemap.xml': sitemap(c, site) };
+    if (!template || !/<main id="main"/.test(template) || !/<base href=/.test(template)) return out;
+    out['404.html'] = notFoundPage(c, site, template);
+    out['books/index.html'] = booksList(c, site, template);
+    for (const b of visibleBooks(c)) out[`${bookPath(b)}index.html`] = bookPage(c, b, site, template);
     if (posts(c).length) {
-      out['news/index.html'] = newsList(c, site);
-      for (const p of posts(c)) out[`${postPath(p)}index.html`] = postPage(c, p, site);
+      out['news/index.html'] = newsList(c, site, template);
+      for (const p of posts(c)) out[`${postPath(p)}index.html`] = postPage(c, p, site, template);
     }
-    if (events(c).length) out['events/index.html'] = eventsPage(c, site);
+    if (events(c).length) out['events/index.html'] = eventsPage(c, site, template);
+    if (albums(c).length) {
+      out['music/index.html'] = musicPage(c, site, template);
+      for (const a of albums(c)) out[`music/${a.id}/index.html`] = albumPage(c, a, site, template);
+    }
+    out['about/index.html'] = aboutPage(c, site, template);
+    out['contact/index.html'] = contactPage(c, site, template);
+    out['privacy/index.html'] = privacyPage(c, site, template);
     return out;
   }
 
   // Sidene admin har ansvar for. Ligger det en slik side i repoet som ikke lages lenger, slettes den.
-  const MANAGED = /^(books\/([a-z0-9-]+\/)?index\.html|news\/([a-z0-9-]+\/)?index\.html|(events|music|about|contact)\/index\.html)$/;
-  const DATA_BLOCK = /  <!-- data:start[\s\S]*?<!-- data:slutt -->/;
+  const MANAGED = /^((books|news|music)\/([a-z0-9-]+\/)?index\.html|(events|about|contact|privacy)\/index\.html)$/;
 
-  const SEO = { files, indexLd, bookPath, postPath, MANAGED, BOOK_PAGE: MANAGED, DATA_BLOCK };
+  const SEO = { files, indexLd, MANAGED, DATA_BLOCK };
   if (typeof module === 'object' && module.exports) module.exports = SEO;
   else root.EC_SEO = SEO;
 })(this);

@@ -369,11 +369,13 @@
         const SEO = window.EC_SEO;
         const site = new URL('../', location.href).href;
         const index = blobs.get(repoPath('index.html'));
+        let template = null;
         if (index) {
           try {
             const html = base64ToText((await api(`/git/blobs/${index.sha}`)).content);
-            let next = html.replace(/  <!-- deling:start[\s\S]*?<!-- deling:slutt -->/, shareMetaHTML(content));
-            if (SEO) next = next.replace(SEO.DATA_BLOCK, SEO.indexLd(content, site));
+            let next = html.replace(/  <!-- deling:start[\s\S]*?<!-- deling:slutt -->/, () => shareMetaHTML(content));
+            if (SEO) next = next.replace(SEO.DATA_BLOCK, () => SEO.indexLd(content, site));
+            template = next;
             if (next !== html) entries.push(text('index.html', next));
           } catch (err) {
             console.warn('Klarte ikke å oppdatere delingsinfo i index.html', err);
@@ -381,8 +383,8 @@
         }
 
         // Egne sider uten # (bøker, nyheter, arrangementer, musikk, om og kontakt) og sitemap.xml, så Google finner alt. Sider for innhold som er slettet eller skjult, fjernes.
-        if (SEO) {
-          const generated = SEO.files(content, site);
+        if (SEO && template) {
+          const generated = SEO.files(content, site, template);
           const keep = new Set(Object.keys(generated).map(repoPath));
           for (const [p, body] of Object.entries(generated)) entries.push(text(p, body));
           const prefix = gh.folder.replace(/^\/+|\/+$/g, '');
@@ -844,7 +846,7 @@
         </div>` : ''}
         <div class="card">
           <h3 style="margin-top:0">Personvern</h3>
-          <p class="small muted">Siden har en egen personvernside (<a href="../#/privacy" target="_blank" rel="noopener">se den ↗</a>) som forteller
+          <p class="small muted">Siden har en egen personvernside (<a href="../privacy/" target="_blank" rel="noopener">se den ↗</a>) som forteller
             hvordan e-postadressene brukes. Den lages automatisk ut fra tjenesten du har valgt.</p>
         </div>`;
     } else if (view.startsWith('event:')) {
@@ -871,7 +873,7 @@
         <div class="row">
           <button class="icon" data-act="move-book" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} title="Flytt opp i rekkefølgen">↑</button>
           <button class="icon" data-act="move-book" data-i="${i}" data-d="1" ${i === data.books.length - 1 ? 'disabled' : ''} title="Flytt ned i rekkefølgen">↓</button>
-          <a class="btn" href="../#/book/${encodeURIComponent(b.id)}" target="_blank" rel="noopener">Se ↗</a>
+          <a class="btn" href="../books/${encodeURIComponent(b.id)}/" target="_blank" rel="noopener">Se ↗</a>
         </div>
       </div>
 
@@ -963,7 +965,7 @@
     $('#editor').innerHTML = `
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <h2 style="margin:0">📰 ${esc(n.title.en || 'Ny nyhet')}</h2>
-        <a class="btn" href="../#/news/${encodeURIComponent(n.id)}" target="_blank" rel="noopener">Se ↗</a>
+        <a class="btn" href="../news/${encodeURIComponent(n.id)}/" target="_blank" rel="noopener">Se ↗</a>
       </div>
       <div class="card">
         ${langField('Overskrift', `${p}.title`)}
@@ -996,7 +998,7 @@
     $('#editor').innerHTML = `
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <h2 style="margin:0">📅 ${esc(e.title.en || 'Nytt arrangement')}</h2>
-        <a class="btn" href="../#/events" target="_blank" rel="noopener">Se ↗</a>
+        <a class="btn" href="../events/" target="_blank" rel="noopener">Se ↗</a>
       </div>
       <div class="card">
         ${langField('Navn', `${p}.title`)}
@@ -1033,7 +1035,7 @@
         <div class="row">
           <button class="icon" data-act="move-album" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} title="Flytt opp i rekkefølgen">↑</button>
           <button class="icon" data-act="move-album" data-i="${i}" data-d="1" ${i === albums.length - 1 ? 'disabled' : ''} title="Flytt ned i rekkefølgen">↓</button>
-          <a class="btn" href="../#/music" target="_blank" rel="noopener">Se ↗</a>
+          <a class="btn" href="../music/" target="_blank" rel="noopener">Se ↗</a>
         </div>
       </div>
 

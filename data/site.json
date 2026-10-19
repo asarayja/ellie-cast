@@ -118,5 +118,27 @@
         ]
       }
     ]
-  }
+  },
+  "news": [
+    {
+      "id": "the-fragmented-collector-is-out",
+      "date": "2026-06-26",
+      "image": "bilder/deling.jpg",
+      "title": {
+        "no": "",
+        "en": "The Fragmented Collector is out now"
+      },
+      "text": {
+        "no": "",
+        "en": "The day is finally here: The Fragmented Collector is out now on Amazon.\n\nTrenton Makes, The Collector Sedates but The Protector is always watching."
+      },
+      "link": {
+        "label": {
+          "no": "",
+          "en": "Buy on Amazon"
+        },
+        "url": "https://www.amazon.com/Fragmented-Collector-Ellie-Cast-ebook/dp/B0H6CP82M5"
+      }
+    }
+  ]
 }

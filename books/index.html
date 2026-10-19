@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <base href="../">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Denne siden lages automatisk av admin når du publiserer. Endringer her blir overskrevet. -->
   <title>Books by Ellie Cast</title>
+  <!-- deling:start (lages automatisk av admin når du publiserer) -->
   <meta name="description" content="All books by Ellie Cast: The Fragmented Collector.">
   <link rel="canonical" href="https://asarayja.github.io/ellie-cast/books/">
   <meta property="og:type" content="website">
@@ -14,47 +15,50 @@
   <meta property="og:url" content="https://asarayja.github.io/ellie-cast/books/">
   <meta property="og:image" content="https://asarayja.github.io/ellie-cast/bilder/deling.jpg">
   <meta name="twitter:card" content="summary_large_image">
+  <!-- deling:slutt -->
+  <!-- data:start (oppdateres automatisk av admin når du publiserer) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "CollectionPage",
+        "name": "Books by Ellie Cast",
+        "url": "https://asarayja.github.io/ellie-cast/books/",
+        "mainEntity": {
+          "@type": "ItemList",
+          "itemListElement": [
+            {
+              "@type": "ListItem",
+              "position": 1,
+              "url": "https://asarayja.github.io/ellie-cast/books/the-fragmented-collector/",
+              "name": "The Fragmented Collector"
+            }
+          ]
+        }
+      },
+      {
+        "@type": "Person",
+        "@id": "https://asarayja.github.io/ellie-cast/#author",
+        "name": "Ellie Cast",
+        "url": "https://asarayja.github.io/ellie-cast/",
+        "jobTitle": "Author",
+        "sameAs": [
+          "https://www.tiktok.com/@EllieTheAwkwardOne"
+        ]
+      }
+    ]
+  }
+  </script>
+  <!-- data:slutt -->
   <meta name="theme-color" content="#f8edf3" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1b1936" media="(prefers-color-scheme: dark)">
   <script>try{var t=localStorage.getItem('ec-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
-  <script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "CollectionPage",
-      "name": "Books by Ellie Cast",
-      "url": "https://asarayja.github.io/ellie-cast/books/",
-      "mainEntity": {
-        "@type": "ItemList",
-        "itemListElement": [
-          {
-            "@type": "ListItem",
-            "position": 1,
-            "url": "https://asarayja.github.io/ellie-cast/books/the-fragmented-collector/",
-            "name": "The Fragmented Collector"
-          }
-        ]
-      }
-    },
-    {
-      "@type": "Person",
-      "@id": "https://asarayja.github.io/ellie-cast/#author",
-      "name": "Ellie Cast",
-      "url": "https://asarayja.github.io/ellie-cast/",
-      "jobTitle": "Author",
-      "sameAs": [
-        "https://www.tiktok.com/@EllieTheAwkwardOne"
-      ]
-    }
-  ]
-}
-  </script>
-  <link rel="icon" href="../bilder/ikon.svg" type="image/svg+xml">
+  <link rel="icon" href="bilder/ikon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -62,45 +66,81 @@
 
   <header class="topbar">
     <div class="topbar-inner glass">
-      <a class="brand" href="../"><span class="mono" aria-hidden="true">EC</span><span>Ellie Cast</span></a>
+      <a class="brand" href="./"><span class="mono" aria-hidden="true">EC</span><span id="brandName">Ellie Cast</span></a>
       <nav class="nav" id="nav">
-        <a href="../books/" class="active" aria-current="page">Books</a>
-        <a href="../music/">Music</a>
-        <a href="../about/">About Ellie</a>
-        <a href="../contact/">Contact</a>
+        <a href="books/" data-route="books" data-t="nav_books">Books</a>
+        <a href="news/" data-route="news" data-t="nav_news">News</a>
+        <a href="events/" data-route="events" data-t="nav_events" hidden>Events</a>
+        <a href="music/" data-route="music" data-t="nav_music">Music</a>
+        <a href="about/" data-route="about" data-t="nav_about">About Ellie</a>
+        <a href="contact/" data-route="contact" data-t="nav_contact">Contact</a>
       </nav>
       <div class="tools">
+        <button class="tool" id="themeBtn" aria-label="Change theme">☾</button>
         <button class="tool menu-btn" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="nav"><span></span><span></span></button>
       </div>
     </div>
   </header>
 
   <main id="main" tabindex="-1">
-
-    <div class="page-head"><span class="pill">Ellie Cast</span><h1>The books</h1></div>
-    <div class="shelf large">
-      <a class="book-card" href="the-fragmented-collector/">
-        <div class="book-wrap">
-          <div class="book" style="--b:#23203a"><img src="../bilder/the-fragmented-collector.jpg" alt="The Fragmented Collector" loading="lazy"></div>
-          
-        </div>
-        <h3>The Fragmented Collector</h3>
-        <p class="meta">June 26, 2026</p>
-      </a>
+    <div class="view">
+      <div class="page-head"><span class="pill">Ellie Cast</span><h1>The books</h1></div>
+      <div class="shelf large">
+        <a class="book-card" href="books/the-fragmented-collector/">
+          <div class="book-wrap"><div class="book" style="--b:#23203a"><img src="bilder/the-fragmented-collector.jpg" alt="The Fragmented Collector"></div></div>
+          <h3>The Fragmented Collector</h3>
+          <p class="meta">June 26, 2026</p>
+        </a>
+      </div>
     </div>
   </main>
 
   <footer class="footer">
     <div class="footer-inner glass">
       <span class="footer-name">Ellie Cast</span>
-      <span class="footer-meta">Author</span>
+      <span class="footer-meta">© <span id="year"></span> · <span id="footerRole">Author</span></span>
     </div>
   </footer>
-  <script>
-    (function () {
-      var nav = document.getElementById('nav'), btn = document.getElementById('menuBtn');
-      btn.addEventListener('click', function () { btn.setAttribute('aria-expanded', nav.classList.toggle('open')); });
-    })();
-  </script>
+
+  <div class="queue-panel glass" id="queuePanel" hidden>
+    <div class="queue-head">
+      <h2 data-t="up_next">Up next</h2>
+      <button class="pl-btn" id="queueClose" aria-label="Close">×</button>
+    </div>
+    <ol class="queue-list" id="queueList"></ol>
+  </div>
+
+  <div class="player glass" id="player" hidden>
+    <div class="pl-now">
+      <div class="pl-cover" id="plCover"></div>
+      <div class="pl-meta">
+        <strong id="plTitle"></strong>
+        <a id="plAlbum" href="music/"></a>
+      </div>
+    </div>
+    <div class="pl-center">
+      <div class="pl-controls">
+        <button class="pl-btn pl-toggle" id="plShuffle"></button>
+        <button class="pl-btn" id="plPrev"></button>
+        <button class="pl-btn pl-play" id="plPlay"></button>
+        <button class="pl-btn" id="plNext"></button>
+        <button class="pl-btn pl-toggle" id="plRepeat"></button>
+      </div>
+      <div class="pl-progress">
+        <span id="plTime">0:00</span>
+        <input type="range" class="range" id="plSeek" min="0" max="1000" value="0">
+        <span id="plDur">0:00</span>
+      </div>
+    </div>
+    <div class="pl-side">
+      <button class="pl-btn" id="plQueue"></button>
+      <input type="range" class="range pl-vol" id="plVol" min="0" max="1" step="0.01">
+      <button class="pl-btn pl-close" id="plClose">×</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="assets/app.js"></script>
 </body>
 </html>

@@ -18,9 +18,10 @@ All colours are at the top of `assets/style.css`, in the block marked **FARGER**
 
 ## Pages
 
-`#/books`, `#/book/the-fragmented-collector`, `#/news`, `#/events`, `#/music`, `#/about`, `#/contact`, `#/privacy`
+`books/`, `books/the-fragmented-collector/`, `news/`, `events/`, `music/`, `about/`, `contact/`, `privacy/`
 
-Each book also has its own page that search engines and link previews can read, for example `books/the-fragmented-collector/`. These pages and `sitemap.xml` are generated automatically.
+Every address has its own `index.html`, so links work when shared and can be found by search engines.
+These files, `404.html` and `sitemap.xml` are generated automatically from `data/site.json`. Old links with `#/` still work.
 
 ## Private files
 
