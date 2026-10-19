@@ -134,7 +134,7 @@
       reviews: (b.reviews || []).map((r) => ({ quote: i18n(r.quote), source: r.source || '', stars: String(r.stars || '') })),
     }));
     d.news = (d.news || []).map((n) => ({
-      id: '', date: '', image: '', ...n,
+      id: '', date: '', image: '', book: '', ...n,
       title: i18n(n.title), text: i18n(n.text),
       link: { label: i18n(n.link?.label), url: n.link?.url || '' },
     }));
@@ -973,7 +973,13 @@
           <div class="field"><label>Dato</label><input type="date" data-path="${p}.date" value="${esc(n.date)}"></div>
           ${textField('Nettadresse-navn (id)', `${p}.id`, 'pattern="[a-z0-9-]+"')}
         </div>
-        ${imageField('Bilde (valgfritt)', `${p}.image`, 'Liggende bilde passer best.')}
+        <div class="field"><label>Vis en bok (valgfritt)</label>
+          <select data-path="${p}.book">
+            <option value="">Ingen – bruk bildet under</option>
+            ${data.books.map((b) => `<option value="${esc(b.id)}" ${n.book === b.id ? 'selected' : ''}>${esc(b.title.en || b.id)}</option>`).join('')}
+          </select>
+          <p class="small muted">Velger du en bok, vises den i 3D med omslaget (som på boksiden) i stedet for bildet.</p></div>
+        ${n.book ? '' : imageField('Bilde (valgfritt)', `${p}.image`, 'Liggende bilde passer best.')}
         ${langField('Tekst', `${p}.text`, true)}
         <p class="small muted">Tom linje mellom avsnittene. Nyeste dato vises først på siden.</p>
       </div>
@@ -1095,7 +1101,7 @@
       renderNav();
       if (view.startsWith('book:') && e.type === 'change') renderEditor();
     }
-    if (path === 'newsletter.provider') renderEditor();
+    if (path === 'newsletter.provider' || /^news\.\d+\.book$/.test(path)) renderEditor();
   }
 
   async function onAction(e) {
@@ -1264,7 +1270,7 @@
     const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     let id = `nyhet-${date}`;
     for (let n = 2; data.news.some((x) => x.id === id); n++) id = `nyhet-${date}-${n}`;
-    data.news.unshift({ id, date, image: '', title: { no: '', en: 'New post' }, text: { no: '', en: '' }, link: { label: { no: '', en: '' }, url: '' } });
+    data.news.unshift({ id, date, image: '', book: '', title: { no: '', en: 'New post' }, text: { no: '', en: '' }, link: { label: { no: '', en: '' }, url: '' } });
     view = 'post:0';
     markDirty(); renderNav(); renderEditor();
   }

@@ -123,7 +123,7 @@
     {
       "id": "the-fragmented-collector-is-out",
       "date": "2026-06-26",
-      "image": "bilder/deling.jpg",
+      "image": "",
       "title": {
         "no": "",
         "en": "The Fragmented Collector is out now"
@@ -138,7 +138,8 @@
           "en": "Buy on Amazon"
         },
         "url": "https://www.amazon.com/Fragmented-Collector-Ellie-Cast-ebook/dp/B0H6CP82M5"
-      }
+      },
+      "book": "the-fragmented-collector"
     }
   ]
 }

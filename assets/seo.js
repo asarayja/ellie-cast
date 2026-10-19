@@ -263,9 +263,11 @@
 
   // ---------- Nyheter ----------
 
-  const newsCard = (p) => `
+  const postBook = (c, p) => p.book ? visibleBooks(c).find((b) => b.id === p.book) : null;
+  const newsCard = (c, p) => `
         <a class="news-card glass" href="${postPath(p)}">
-          ${p.image ? `<div class="news-img"><img src="${esc(p.image)}" alt="" loading="lazy"></div>` : ''}
+          ${postBook(c, p) ? `<div class="news-img news-book" style="--b:${safeColor(postBook(c, p).color)}">${coverHTML(c, postBook(c, p))}</div>`
+            : p.image ? `<div class="news-img"><img src="${esc(p.image)}" alt="" loading="lazy"></div>` : ''}
           <div class="news-body">
             ${p.date ? `<time datetime="${esc(p.date)}">${esc(niceDate(p.date))}</time>` : ''}
             <h3>${esc(tr(p.title))}</h3>
@@ -282,27 +284,32 @@
       ld: [{ '@type': 'CollectionPage', name: `News · ${c.site.name}`, url: `${site}news/` }],
       body: `
       <div class="page-head"><span class="pill">${esc(c.site.name)}</span><h1>News</h1></div>
-      <div class="news-grid">${posts(c).map(newsCard).join('')}</div>`,
+      <div class="news-grid">${posts(c).map((p) => newsCard(c, p)).join('')}</div>`,
     });
   }
 
   function postPage(c, p, site, tpl) {
     const link = safeUrl(p.link?.url) ? p.link : null;
+    const pb = postBook(c, p);
+    const image = pb?.cover || p.image;
     return page(c, site, tpl, {
       path: postPath(p), type: 'article',
       title: `${tr(p.title)} · ${c.site.name}`,
       desc: oneLine(tr(p.text)) || tr(p.title),
-      image: p.image ? new URL(p.image, site).href : '',
+      image: image ? new URL(image, site).href : '',
       ld: [postLd(c, p, site)],
       body: `
       <a class="back" href="news/">← All news</a>
+      <div class="${pb ? 'post-with-book' : ''}">
+      ${pb ? `<a class="book-page-cover" href="${bookPath(pb)}" data-tilt><div class="hero-halo" style="--b:${safeColor(pb.color)}"></div>${coverHTML(c, pb)}</a>` : ''}
       <article class="post glass">
         ${p.date ? `<time datetime="${esc(p.date)}">${esc(niceDate(p.date))}</time>` : ''}
         <h1>${esc(tr(p.title))}</h1>
-        ${p.image ? `<img class="post-img" src="${esc(p.image)}" alt="">` : ''}
+        ${p.image && !pb ? `<img class="post-img" src="${esc(p.image)}" alt="">` : ''}
         <div class="prose">${paragraphs(tr(p.text))}</div>
         ${link ? `<div class="actions"><a class="btn" href="${esc(safeUrl(link.url))}" target="_blank" rel="noopener">${esc(tr(link.label) || 'Read more')}</a></div>` : ''}
-      </article>`,
+      </article>
+      </div>`,
     });
   }
 

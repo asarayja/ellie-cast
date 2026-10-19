@@ -321,6 +321,15 @@ a.tile:hover { transform: translateY(-4px); }
 .post { max-width: 820px; margin: 0 auto; padding: clamp(28px, 5vw, 56px); border-radius: var(--radius); }
 .post h1 { font-size: clamp(2.8rem, 7vw, 4.6rem); margin: 14px 0 24px; }
 .post-img { width: 100%; border-radius: 18px; margin: 0 0 28px; }
+.post-with-book { display: grid; grid-template-columns: minmax(200px, 360px) 1fr; gap: clamp(30px, 6vw, 70px); align-items: center; }
+.post-with-book .post { max-width: none; margin: 0; }
+.news-book { position: relative; display: grid; place-items: center; background: radial-gradient(60% 90% at 50% 70%, color-mix(in srgb, var(--accent) 45%, var(--b)), transparent 75%), var(--bg-2); }
+.news-book .book { width: 28%; transform: rotate(-4deg); transition: transform .4s cubic-bezier(.2,.8,.2,1), box-shadow .4s; }
+.news-card:hover .news-book .book { transform: translateY(-6px) rotate(-1deg); }
+@media (max-width: 760px) {
+  .post-with-book { grid-template-columns: 1fr; }
+  .post-with-book .book-page-cover .book { width: min(60%, 240px); }
+}
 
 /* ---------- Arrangementer ---------- */
 .events { display: grid; gap: 14px; }

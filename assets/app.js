@@ -266,11 +266,16 @@
   }
 
   // ---------- Nyheter ----------
+  // En nyhet kan kobles til en bok. Da vises boka i stedet for et bilde.
+
+  const postBook = (p) => p.book ? books().find((b) => b.id === p.book) : null;
 
   function newsCard(p, i = 0) {
+    const pb = postBook(p);
     return `
       <a class="news-card glass reveal" href="news/${encodeURIComponent(p.id)}/" style="--d:${i * 70}ms">
-        ${p.image ? `<div class="news-img"><img src="${esc(p.image)}" alt="" loading="lazy"></div>` : ''}
+        ${pb ? `<div class="news-img news-book" style="--b:${safeColor(pb.color)}">${bookHTML(pb)}</div>`
+          : p.image ? `<div class="news-img"><img src="${esc(p.image)}" alt="" loading="lazy"></div>` : ''}
         <div class="news-body">
           ${p.date ? `<time datetime="${esc(p.date)}">${esc(fmtDate(p.date))}</time>` : ''}
           <h3>${esc(tr(p.title))}</h3>
@@ -287,18 +292,25 @@
       if (!p) return viewNotFound();
       const link = p.link && safeUrl(p.link.url) ? p.link : null;
       const more = posts().filter((x) => x !== p).slice(0, 3);
+      const pb = postBook(p);
       return `
         <a class="back" href="news/">${t('back_news')}</a>
-        <article class="post glass reveal">
+        <div class="${pb ? 'post-with-book' : ''}">
+        ${pb ? `
+        <a class="book-page-cover reveal" href="books/${encodeURIComponent(pb.id)}/" data-tilt aria-label="${esc(tr(pb.title))}">
+          <div class="hero-halo" style="--b:${safeColor(pb.color)}"></div>${bookHTML(pb)}
+        </a>` : ''}
+        <article class="post glass reveal" style="--d:120ms">
           ${p.date ? `<time datetime="${esc(p.date)}">${esc(fmtDate(p.date))}</time>` : ''}
           <h1>${esc(tr(p.title))}</h1>
-          ${p.image ? `<img class="post-img" src="${esc(p.image)}" alt="">` : ''}
+          ${p.image && !pb ? `<img class="post-img" src="${esc(p.image)}" alt="">` : ''}
           <div class="prose">${paragraphs(tr(p.text))}</div>
           <div class="actions">
             ${link ? `<a class="btn" href="${esc(safeUrl(link.url))}" target="_blank" rel="noopener">${esc(tr(link.label) || t('read_post'))}</a>` : ''}
             <a class="btn ghost" href="news/${encodeURIComponent(p.id)}/" data-copy>${t('copy_link')}</a>
           </div>
         </article>
+        </div>
         ${more.length ? `
         <section class="section">
           <div class="section-head"><h2>${t('more_news')}</h2><a class="link" href="news/">${t('all_news')} →</a></div>
