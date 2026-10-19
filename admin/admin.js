@@ -126,7 +126,7 @@
     d.contact.text = i18n(d.contact.text);
     d.contact.links = (d.contact.links || []).map((l) => ({ label: l.label || '', url: l.url || '' }));
     d.books = (d.books || []).map((b) => ({
-      id: '', year: '', pages: '', cover: '', color: '#23203a', ...b,
+      id: '', year: '', pages: '', seriesNo: '', cover: '', color: '#23203a', ...b,
       status: BOOK_STATUS.includes(b.status) ? b.status : 'published',
       title: i18n(b.title), series: i18n(b.series), genre: i18n(b.genre), blurb: i18n(b.blurb), excerpt: i18n(b.excerpt),
       warnings: i18n(b.warnings),
@@ -148,6 +148,7 @@
     d.newsletter = { provider: '', buttondown: '', url: '', ...d.newsletter };
     d.newsletter.title = i18n(d.newsletter.title);
     d.newsletter.text = i18n(d.newsletter.text);
+    d.newsletter.bonus = { title: i18n(d.newsletter.bonus?.title), text: i18n(d.newsletter.bonus?.text) };
     d.music = d.music || {};
     d.music.albums = (d.music.albums || []).map((a) => ({
       id: '', artist: '', year: '', cover: '', ...a,
@@ -949,6 +950,14 @@
           <p class="small muted">Tomt = standardteksten («Be the first to know» …).</p>
           ${langField('Overskrift', 'newsletter.title')}
           ${langField('Tekst', 'newsletter.text', true)}
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">🎁 Gave ved påmelding (valgfritt)</h3>
+          <p class="small muted">F.eks. et bonuskapittel, en slettet scene eller en kort historie fra bokas verden. Her skriver du bare hva leserne får –
+            den vises i påmeldingsboksen. Selve gaven legger du i velkomst-e-posten inne på ${n.provider === 'buttondown' ? 'Buttondown (Settings → Emails)' : 'nyhetsbrev-tjenesten'},
+            så bare de som melder seg på får den. Ikke legg manus eller filer med gaven på siden.</p>
+          ${langField('Hva får de?', 'newsletter.bonus.title')}
+          ${langField('Kort beskrivelse', 'newsletter.bonus.text', true)}
         </div>` : ''}
         <div class="card">
           <h3 style="margin-top:0">Personvern</h3>
@@ -999,7 +1008,11 @@
         <p class="small muted" style="margin-top:-8px">Med status «Kommer» og en dato i kalenderen får boka nedtelling på siden og på forsiden.</p>
         ${editionsEditor(`${p}.editions`)}
         ${langField('Sjanger', `${p}.genre`)}
-        ${langField('Serie (valgfritt)', `${p}.series`)}
+        <div class="grid2">
+          ${langField('Serie (valgfritt)', `${p}.series`)}
+          ${textField('Nummer i serien', `${p}.seriesNo`, 'inputmode="numeric" maxlength="3" placeholder="1"')}
+        </div>
+        <p class="small muted" style="margin-top:-8px">Bøker med nøyaktig samme serienavn vises i leserekkefølge etter nummeret, både under Bøker og nederst på hver bokside. Det vises først når serien har minst to bøker.</p>
       </div>
 
       <div class="card">
@@ -1413,7 +1426,7 @@
     const n = data.books.length + 1;
     data.books.push({
       id: `bok-${n}`, title: { no: 'Ny bok', en: 'New book' }, status: 'hidden', year: '', pages: '', cover: '', color: '#23203a',
-      series: { no: '', en: '' }, genre: { no: '', en: '' }, blurb: { no: '', en: '' }, excerpt: { no: '', en: '' }, links: [],
+      series: { no: '', en: '' }, seriesNo: '', genre: { no: '', en: '' }, blurb: { no: '', en: '' }, excerpt: { no: '', en: '' }, links: [],
       warnings: { no: '', en: '' }, reviews: [], release: { date: '', time: '', tz: '' },
     });
     view = `book:${data.books.length - 1}`;

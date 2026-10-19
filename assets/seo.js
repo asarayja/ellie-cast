@@ -19,6 +19,12 @@
   const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
   const visibleBooks = (c) => (c.books || []).filter((b) => b.id && b.status !== 'hidden' && ID.test(b.id));
+  // Serier (samme regler som app.js): sortert etter nummer, uten nummer sist
+  const seriesName = (b) => tr(b.series).trim();
+  const seriesNo = (b) => +b.seriesNo > 0 ? +b.seriesNo : 0;
+  const inSeries = (c, name) => visibleBooks(c).filter((x) => seriesName(x) === name)
+    .map((x, i) => [x, i]).sort(([a, i], [b, j]) => (seriesNo(a) || 1e9) - (seriesNo(b) || 1e9) || i - j).map(([x]) => x);
+  const seriesList = (c) => [...new Set(visibleBooks(c).map(seriesName).filter(Boolean))].map((name) => ({ name, list: inSeries(c, name) })).filter((s) => s.list.length > 1);
   const posts = (c) => (c.news || []).filter((p) => ID.test(p.id || '') && tr(p.title)).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const events = (c) => (c.events || []).filter((e) => DAY.test(e.date || '') && tr(e.title)).sort((a, b) => a.date.localeCompare(b.date));
   const albums = (c) => (c.music?.albums || []).filter((a) => ID.test(a.id || '') && (a.tracks || []).some((t) => t.src));
@@ -66,6 +72,7 @@
       ...(tr(b.blurb) ? { description: oneLine(tr(b.blurb), 500) } : {}),
       ...(tr(b.genre) ? { genre: tr(b.genre) } : {}),
       ...(+b.pages ? { numberOfPages: +b.pages } : {}),
+      ...(seriesName(b) ? { isPartOf: { '@type': 'BookSeries', name: seriesName(b) }, ...(seriesNo(b) ? { position: seriesNo(b) } : {}) } : {}),
       ...(links.length ? { sameAs: links } : {}),
       ...(editions(b).length ? { workExample: editions(b).map((e) => ({
         '@type': 'Book', name: `${tr(b.title)} (${e.name.trim()})`, datePublished: e.release.date,
@@ -208,6 +215,8 @@
 
   function booksList(c, site, tpl) {
     const list = visibleBooks(c);
+    const series = seriesList(c);
+    const rest = list.filter((b) => !series.some((s) => s.name === seriesName(b)));
     return page(c, site, tpl, {
       path: 'books/',
       title: `Books by ${c.site.name}`,
@@ -216,15 +225,30 @@
         mainEntity: { '@type': 'ItemList', itemListElement: list.map((b, i) => ({ '@type': 'ListItem', position: i + 1, url: site + bookPath(b), name: tr(b.title) })) } }],
       body: `
       <div class="page-head"><span class="pill">${esc(c.site.name)}</span><h1>The books</h1></div>
-      <div class="shelf large">${list.map((b) => `
+      ${series.length ? `${series.map((s) => `
+      <section class="section">
+        <div class="section-head"><h2>${esc(s.name)}</h2><span class="muted">Reading order</span></div>
+        <div class="shelf large">${s.list.map((b) => staticCard(c, b, true)).join('')}</div>
+      </section>`).join('')}
+      ${rest.length ? `
+      <section class="section">
+        <div class="section-head"><h2>Other books</h2></div>
+        <div class="shelf large">${rest.map((b) => staticCard(c, b)).join('')}</div>
+      </section>` : ''}` : `
+      <div class="shelf large">${list.map((b) => staticCard(c, b)).join('')}
+      </div>`}`,
+    });
+  }
+
+  const staticCard = (c, b, inOrder) => {
+    const meta = [inOrder && seriesNo(b) ? `Book ${seriesNo(b)}` : '', releaseText(b) ? `${b.status === 'upcoming' ? 'Coming ' : ''}${releaseText(b)}` : ''].filter(Boolean).join(' · ');
+    return `
         <a class="book-card" href="${bookPath(b)}">
           <div class="book-wrap">${coverHTML(c, b)}${b.status === 'upcoming' ? '<span class="badge">Coming soon</span>' : ''}</div>
           <h3>${esc(tr(b.title))}</h3>
-          ${releaseText(b) ? `<p class="meta">${b.status === 'upcoming' ? 'Coming ' : ''}${esc(releaseText(b))}</p>` : ''}
-        </a>`).join('')}
-      </div>`,
-    });
-  }
+          ${meta ? `<p class="meta">${esc(meta)}</p>` : ''}
+        </a>`;
+  };
 
   function bookPage(c, b, site, tpl) {
     const title = tr(b.title);
@@ -232,7 +256,8 @@
     const dates = editions(b).length
       ? editions(b).map((e) => [e.name.trim(), releaseText({ release: e.release })])
       : [[b.status === 'upcoming' ? 'Coming' : 'Published', releaseText(b)]];
-    const facts = [['Series', tr(b.series)], ...dates, ['Genre', tr(b.genre)], ['Pages', b.pages]].filter(([, v]) => v);
+    const order = seriesName(b) ? inSeries(c, seriesName(b)) : [];
+    const facts = [['Series', [seriesName(b), seriesNo(b) ? `Book ${seriesNo(b)}` : ''].filter(Boolean).join(' · ')], ...dates, ['Genre', tr(b.genre)], ['Pages', b.pages]].filter(([, v]) => v);
     const warnings = tr(b.warnings).split(/\n|,/).map((w) => w.trim()).filter(Boolean);
     const reviews = (b.reviews || []).filter((r) => tr(r.quote));
     return page(c, site, tpl, {
@@ -274,6 +299,11 @@
             ${r.source ? `<figcaption>${esc(r.source)}</figcaption>` : ''}
           </figure>`).join('')}
         </div>
+      </section>` : ''}
+      ${order.length > 1 ? `
+      <section class="section">
+        <div class="section-head"><h2>Reading order</h2><span class="muted">${esc(seriesName(b))}</span></div>
+        <div class="shelf">${order.map((x) => staticCard(c, x, true)).join('')}</div>
       </section>` : ''}`,
     });
   }

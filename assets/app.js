@@ -5,7 +5,7 @@
     en: {
       nav_books: 'Books', nav_music: 'Music', nav_about: 'About Ellie', nav_contact: 'Contact',
       books: 'The books', all_books: 'All books', see_books: 'See the books', about_me: 'About Ellie', read_more: 'Read more',
-      latest: 'Latest book', read_about: 'About the book', upcoming: 'Coming', coming: 'Coming soon', pages: 'Pages', year: 'Published', genre: 'Genre', series: 'Series',
+      latest: 'Latest book', read_about: 'About the book', upcoming: 'Coming', coming: 'Coming soon', pages: 'Pages', year: 'Published', genre: 'Genre', series: 'Series', reading_order: 'Reading order', book_no: 'Book', other_books: 'Other books', nl_gift: 'Free when you sign up',
       excerpt: 'Excerpt', back: '← All books', more_books: 'More books', contact: 'Contact', say_hi: 'Say hello', write: 'Send an email',
       music: 'Music', music_lead: 'Listen while you read. The music keeps playing as you move around the site.', listen: 'Listen now',
       all_music: '← All music', play: 'Play', pause: 'Pause', shuffle_play: 'Shuffle', song: 'song', songs: 'songs', minutes: 'min',
@@ -46,6 +46,12 @@
   };
 
   const books = () => (data.books || []).filter((b) => b.status !== 'hidden');
+  // Serier: bøker med samme serienavn, sortert etter nummer (uten nummer havner sist)
+  const seriesName = (b) => tr(b.series).trim();
+  const seriesNo = (b) => +b.seriesNo > 0 ? +b.seriesNo : 0;
+  const inSeries = (name) => books().filter((x) => seriesName(x) === name)
+    .map((x, i) => [x, i]).sort(([a, i], [b, j]) => (seriesNo(a) || 1e9) - (seriesNo(b) || 1e9) || i - j).map(([x]) => x);
+  const seriesList = () => [...new Set(books().map(seriesName).filter(Boolean))].map((name) => ({ name, list: inSeries(name) })).filter((s) => s.list.length > 1);
   const posts = () => (data.news || []).filter((p) => p.id && tr(p.title)).sort((a, b) => `${b.date} ${b.time || ''}`.localeCompare(`${a.date} ${a.time || ''}`));
   // Datoer og klokkeslett vises på engelsk, men slik besøkende er vant til: 24-timers klokke og dag før måned
   // i Europa (26 June 2026, 15:00), AM/PM i USA (June 26, 2026, 9:00 AM). Klokkeslett vises i besøkendes egen tidssone.
@@ -140,12 +146,13 @@
 
   const metaLine = (b) => [b.status === 'upcoming' ? `${t('upcoming')} ${releaseText(b)}`.trim() : releaseText(b), tr(b.genre)].filter(Boolean).map(esc).join(' · ');
 
-  function bookCard(b, i = 0) {
+  function bookCard(b, i = 0, inOrder = false) {
+    const meta = [inOrder && seriesNo(b) ? `${t('book_no')} ${seriesNo(b)}` : '', metaLine(b)].filter(Boolean).join(' · ');
     return `
       <a class="book-card reveal" href="books/${encodeURIComponent(b.id)}/" style="--d:${i * 70}ms">
         <div class="book-wrap">${bookHTML(b)}${b.status === 'upcoming' ? `<span class="badge">${t('coming')}</span>` : ''}</div>
         <h3>${esc(tr(b.title))}</h3>
-        ${metaLine(b) ? `<p class="meta">${metaLine(b)}</p>` : ''}
+        ${meta ? `<p class="meta">${meta}</p>` : ''}
       </a>`;
   }
 
@@ -221,7 +228,7 @@
           <h2>${t('books')}</h2>
           <a class="link" href="books/">${t('all_books')} →</a>
         </div>
-        <div class="shelf">${books().map(bookCard).join('')}</div>
+        <div class="shelf">${books().map((x, i) => bookCard(x, i)).join('')}</div>
       </section>
 
       ${posts().length ? `
@@ -388,6 +395,12 @@
           <span class="pill">${t('nl_pill')}</span>
           <h2>${esc(tr(n.title) || t('nl_title'))}</h2>
           <p>${esc(tr(n.text) || t('nl_text'))}</p>
+          ${tr(n.bonus?.title) ? `
+          <div class="nl-bonus">
+            <span class="pill accent">🎁 ${t('nl_gift')}</span>
+            <h3>${esc(tr(n.bonus.title))}</h3>
+            ${tr(n.bonus.text) ? `<p>${esc(tr(n.bonus.text))}</p>` : ''}
+          </div>` : ''}
         </div>
         <div>
           ${action}
@@ -412,9 +425,22 @@
   }
 
   function viewBooks() {
+    const series = seriesList();
+    const rest = books().filter((b) => !series.some((s) => s.name === seriesName(b)));
     return `
       <div class="page-head reveal"><span class="pill">${esc(data.site.name)}</span><h1>${t('books')}</h1></div>
-      <div class="shelf large">${books().map(bookCard).join('')}</div>`;
+      ${series.length ? `
+      ${series.map((s) => `
+      <section class="section">
+        <div class="section-head"><h2>${esc(s.name)}</h2><span class="muted">${t('reading_order')}</span></div>
+        <div class="shelf large">${s.list.map((b, i) => bookCard(b, i, true)).join('')}</div>
+      </section>`).join('')}
+      ${rest.length ? `
+      <section class="section">
+        <div class="section-head"><h2>${t('other_books')}</h2></div>
+        <div class="shelf large">${rest.map((b, i) => bookCard(b, i)).join('')}</div>
+      </section>` : ''}` : `
+      <div class="shelf large">${books().map((b, i) => bookCard(b, i)).join('')}</div>`}`;
   }
 
   function viewBook(id) {
@@ -424,8 +450,9 @@
     const dates = editions(b).length
       ? editions(b).map((e) => [e.name.trim(), releaseText({ release: e.release }, b.status === 'upcoming')])
       : [[b.status === 'upcoming' ? t('upcoming') : t('year'), releaseText(b, b.status === 'upcoming')]];
-    const facts = [[t('series'), tr(b.series)], ...dates, [t('genre'), tr(b.genre)], [t('pages'), b.pages]].filter(([, v]) => v);
-    const others = books().filter((x) => x !== b);
+    const facts = [[t('series'), [seriesName(b), seriesNo(b) ? `${t('book_no')} ${seriesNo(b)}` : ''].filter(Boolean).join(' · ')], ...dates, [t('genre'), tr(b.genre)], [t('pages'), b.pages]].filter(([, v]) => v);
+    const order = seriesName(b) ? inSeries(seriesName(b)) : [];
+    const others = books().filter((x) => x !== b && (order.length < 2 || !order.includes(x)));
     const warnings = tr(b.warnings).split(/\n|,/).map((w) => w.trim()).filter(Boolean);
     const reviews = (b.reviews || []).filter((r) => tr(r.quote));
     return `
@@ -467,11 +494,16 @@
           </figure>`).join('')}
         </div>
       </section>` : ''}
+      ${order.length > 1 ? `
+      <section class="section">
+        <div class="section-head"><h2>${t('reading_order')}</h2><span class="muted">${esc(seriesName(b))}</span></div>
+        <div class="shelf">${order.map((x, i) => bookCard(x, i, true)).join('')}</div>
+      </section>` : ''}
       ${newsletterHTML()}
       ${others.length ? `
       <section class="section">
         <div class="section-head"><h2>${t('more_books')}</h2></div>
-        <div class="shelf">${others.map(bookCard).join('')}</div>
+        <div class="shelf">${others.map((x, i) => bookCard(x, i)).join('')}</div>
       </section>` : ''}`;
   }
 
