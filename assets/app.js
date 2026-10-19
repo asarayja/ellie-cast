@@ -92,6 +92,8 @@
     }
     return fmtDate(r.date);
   };
+  // Flere utgaver av samme bok (f.eks. Paperback og Kindle): { name: 'Kindle', release: { date, time, tz } }
+  const editions = (b) => (b.editions || []).filter((e) => String(e.name || '').trim() && /^\d{4}-\d{2}-\d{2}$/.test(e.release?.date || ''));
   const counting = (b) => b.status === 'upcoming' && releaseDate(b) > new Date();
   const newsDate = (p) => {
     if (/^\d{2}:\d{2}$/.test(p.time || '') && p.tz && /^\d{4}-\d{2}-\d{2}$/.test(p.date || '')) {
@@ -419,7 +421,10 @@
     const b = books().find((x) => x.id === id);
     if (!b) return viewNotFound();
     const links = (b.links || []).filter((l) => safeUrl(l.url));
-    const facts = [[t('series'), tr(b.series)], [b.status === 'upcoming' ? t('upcoming') : t('year'), releaseText(b, b.status === 'upcoming')], [t('genre'), tr(b.genre)], [t('pages'), b.pages]].filter(([, v]) => v);
+    const dates = editions(b).length
+      ? editions(b).map((e) => [e.name.trim(), releaseText({ release: e.release }, b.status === 'upcoming')])
+      : [[b.status === 'upcoming' ? t('upcoming') : t('year'), releaseText(b, b.status === 'upcoming')]];
+    const facts = [[t('series'), tr(b.series)], ...dates, [t('genre'), tr(b.genre)], [t('pages'), b.pages]].filter(([, v]) => v);
     const others = books().filter((x) => x !== b);
     const warnings = tr(b.warnings).split(/\n|,/).map((w) => w.trim()).filter(Boolean);
     const reviews = (b.reviews || []).filter((r) => tr(r.quote));

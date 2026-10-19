@@ -55,7 +55,7 @@
   "books": [
     {
       "id": "the-fragmented-collector",
-      "year": "June 26, 2026",
+      "year": "October 2, 2025",
       "pages": "",
       "cover": "bilder/the-fragmented-collector.jpg",
       "color": "#23203a",
@@ -89,10 +89,28 @@
         }
       ],
       "release": {
-        "date": "2026-06-26",
+        "date": "2025-10-02",
         "time": "",
         "tz": ""
-      }
+      },
+      "editions": [
+        {
+          "name": "Paperback",
+          "release": {
+            "date": "2025-10-02",
+            "time": "",
+            "tz": ""
+          }
+        },
+        {
+          "name": "Kindle",
+          "release": {
+            "date": "2026-06-26",
+            "time": "",
+            "tz": ""
+          }
+        }
+      ]
     }
   ],
   "music": {

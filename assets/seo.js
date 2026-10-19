@@ -46,6 +46,9 @@
     if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date || '')) return b.year || '';
     return new Date(`${r.date}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' });
   };
+  const editions = (b) => (b.editions || []).filter((e) => String(e.name || '').trim() && /^\d{4}-\d{2}-\d{2}$/.test(e.release?.date || ''));
+  const FORMATS = [[/kindle|e-?book|digital/i, 'EBook'], [/paperback|pocket/i, 'Paperback'], [/hardcover|hardback|innbundet/i, 'Hardcover'], [/audio|lydbok/i, 'AudiobookFormat']];
+  const bookFormat = (name) => (FORMATS.find(([re]) => re.test(name)) || [])[1];
   const dur = (s) => s ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '';
 
   // ---------- Strukturdata ----------
@@ -64,6 +67,10 @@
       ...(tr(b.genre) ? { genre: tr(b.genre) } : {}),
       ...(+b.pages ? { numberOfPages: +b.pages } : {}),
       ...(links.length ? { sameAs: links } : {}),
+      ...(editions(b).length ? { workExample: editions(b).map((e) => ({
+        '@type': 'Book', name: `${tr(b.title)} (${e.name.trim()})`, datePublished: e.release.date,
+        ...(bookFormat(e.name) ? { bookFormat: `https://schema.org/${bookFormat(e.name)}` } : {}),
+      })) } : {}),
     };
   }
 
@@ -222,7 +229,10 @@
   function bookPage(c, b, site, tpl) {
     const title = tr(b.title);
     const links = (b.links || []).filter((l) => safeUrl(l.url));
-    const facts = [['Series', tr(b.series)], [b.status === 'upcoming' ? 'Coming' : 'Published', releaseText(b)], ['Genre', tr(b.genre)], ['Pages', b.pages]].filter(([, v]) => v);
+    const dates = editions(b).length
+      ? editions(b).map((e) => [e.name.trim(), releaseText({ release: e.release })])
+      : [[b.status === 'upcoming' ? 'Coming' : 'Published', releaseText(b)]];
+    const facts = [['Series', tr(b.series)], ...dates, ['Genre', tr(b.genre)], ['Pages', b.pages]].filter(([, v]) => v);
     const warnings = tr(b.warnings).split(/\n|,/).map((w) => w.trim()).filter(Boolean);
     const reviews = (b.reviews || []).filter((r) => tr(r.quote));
     return page(c, site, tpl, {

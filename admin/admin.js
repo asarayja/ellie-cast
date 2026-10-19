@@ -131,6 +131,7 @@
       title: i18n(b.title), series: i18n(b.series), genre: i18n(b.genre), blurb: i18n(b.blurb), excerpt: i18n(b.excerpt),
       warnings: i18n(b.warnings),
       release: normRelease(b),
+      editions: (b.editions || []).map((e) => ({ name: e.name || '', release: { date: '', time: '', tz: '', ...e.release } })),
       links: (b.links || []).map((l) => ({ label: i18n(l.label), url: l.url || '' })),
       reviews: (b.reviews || []).map((r) => ({ quote: i18n(r.quote), source: r.source || '', stars: String(r.stars || '') })),
     }));
@@ -996,6 +997,7 @@
           ${textField('Sider', `${p}.pages`, 'maxlength="8"')}
         </div>
         <p class="small muted" style="margin-top:-8px">Med status «Kommer» og en dato i kalenderen får boka nedtelling på siden og på forsiden.</p>
+        ${editionsEditor(`${p}.editions`)}
         ${langField('Sjanger', `${p}.genre`)}
         ${langField('Serie (valgfritt)', `${p}.series`)}
       </div>
@@ -1038,6 +1040,26 @@
         <button class="danger" data-act="delete-book" data-i="${i}">Slett ${esc(b.title.en || 'boka')}</button>
       </div>`;
   }
+
+  const editionsEditor = (path) => {
+    const list = getPath(path);
+    return `<div class="field"><label>Utgaver (valgfritt)</label>
+      ${list.map((e, i) => `
+        <div class="list-item" style="grid-template-columns:1fr">
+          <div class="grid2">
+            <div><label>Utgave</label><input type="text" data-path="${path}.${i}.name" value="${esc(e.name)}" placeholder="Paperback"></div>
+            ${dateField('Utgitt', `${path}.${i}.release`)}
+          </div>
+          <div class="tools">
+            <button class="icon" data-act="move" data-path="${path}" data-i="${i}" data-d="-1" aria-label="Flytt opp" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button class="icon" data-act="move" data-path="${path}" data-i="${i}" data-d="1" aria-label="Flytt ned" ${i === list.length - 1 ? 'disabled' : ''}>↓</button>
+            <button class="icon danger" data-act="remove" data-path="${path}" data-i="${i}" aria-label="Slett">✕</button>
+          </div>
+        </div>`).join('')}
+      <button data-act="add-edition" data-path="${path}">＋ Legg til utgave</button>
+      <p class="small muted">Har boka kommet ut flere ganger, f.eks. Paperback og Kindle, vises hver utgave med sin dato på boksiden i stedet for «Utgitt». Skriv navnet på engelsk. Sett «Utgitt / kommer» over til den første datoen.</p>
+    </div>`;
+  };
 
   const reviewsEditor = (path) => {
     const list = getPath(path);
@@ -1274,6 +1296,7 @@
         [list2[i], list2[j]] = [list2[j], list2[i]];
         view = `book:${j}`; refresh(); break;
       }
+      case 'add-edition': list.push({ name: '', release: { date: '', time: '', tz: '' } }); refresh(); break;
       case 'add-review': list.push({ quote: { no: '', en: '' }, source: '', stars: '' }); refresh(); break;
       case 'delete-event': {
         const ev = data.events[i];
