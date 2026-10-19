@@ -39,6 +39,13 @@
     return dt ? dt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : (d || '');
   };
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  // Dato på boka (statisk side: amerikansk format; app.js viser det etter hvor besøkende er når siden lastes)
+  const releaseIso = (b) => /^\d{4}-\d{2}-\d{2}$/.test(b.release?.date || '') ? b.release.date : isoDate(b.year);
+  const releaseText = (b) => {
+    const r = b.release || {};
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date || '')) return b.year || '';
+    return new Date(`${r.date}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' });
+  };
   const dur = (s) => s ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '';
 
   // ---------- Strukturdata ----------
@@ -52,7 +59,7 @@
       url: `${site}${bookPath(b)}`,
       author: { '@id': `${site}#author` },
       ...(b.cover ? { image: new URL(b.cover, site).href } : {}),
-      ...(isoDate(b.year) && b.status !== 'upcoming' ? { datePublished: isoDate(b.year) } : {}),
+      ...(releaseIso(b) && b.status !== 'upcoming' ? { datePublished: releaseIso(b) } : {}),
       ...(tr(b.blurb) ? { description: oneLine(tr(b.blurb), 500) } : {}),
       ...(tr(b.genre) ? { genre: tr(b.genre) } : {}),
       ...(+b.pages ? { numberOfPages: +b.pages } : {}),
@@ -206,7 +213,7 @@
         <a class="book-card" href="${bookPath(b)}">
           <div class="book-wrap">${coverHTML(c, b)}${b.status === 'upcoming' ? '<span class="badge">Coming soon</span>' : ''}</div>
           <h3>${esc(tr(b.title))}</h3>
-          ${b.year ? `<p class="meta">${b.status === 'upcoming' ? 'Coming ' : ''}${esc(b.year)}</p>` : ''}
+          ${releaseText(b) ? `<p class="meta">${b.status === 'upcoming' ? 'Coming ' : ''}${esc(releaseText(b))}</p>` : ''}
         </a>`).join('')}
       </div>`,
     });
@@ -215,7 +222,7 @@
   function bookPage(c, b, site, tpl) {
     const title = tr(b.title);
     const links = (b.links || []).filter((l) => safeUrl(l.url));
-    const facts = [['Series', tr(b.series)], [b.status === 'upcoming' ? 'Coming' : 'Published', b.year], ['Genre', tr(b.genre)], ['Pages', b.pages]].filter(([, v]) => v);
+    const facts = [['Series', tr(b.series)], [b.status === 'upcoming' ? 'Coming' : 'Published', releaseText(b)], ['Genre', tr(b.genre)], ['Pages', b.pages]].filter(([, v]) => v);
     const warnings = tr(b.warnings).split(/\n|,/).map((w) => w.trim()).filter(Boolean);
     const reviews = (b.reviews || []).filter((r) => tr(r.quote));
     return page(c, site, tpl, {

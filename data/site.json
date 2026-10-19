@@ -87,7 +87,12 @@
           },
           "url": "https://www.amazon.com/Fragmented-Collector-Ellie-Cast-ebook/dp/B0H6CP82M5"
         }
-      ]
+      ],
+      "release": {
+        "date": "2026-06-26",
+        "time": "",
+        "tz": ""
+      }
     }
   ],
   "music": {
@@ -139,7 +144,9 @@
         },
         "url": "https://www.amazon.com/Fragmented-Collector-Ellie-Cast-ebook/dp/B0H6CP82M5"
       },
-      "book": "the-fragmented-collector"
+      "book": "the-fragmented-collector",
+      "time": "",
+      "tz": ""
     }
   ]
 }

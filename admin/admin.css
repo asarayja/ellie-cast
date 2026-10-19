@@ -275,3 +275,20 @@ input[type=color] { width: 44px; height: 40px; padding: 2px; border: 1px solid v
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.err { border-color: var(--red); color: var(--error-text); }
+
+/* Kalender */
+.cal-btn { width: 100%; justify-content: flex-start; text-align: left; font-weight: 600; }
+.cal { margin-top: 10px; padding: 14px; border-radius: 18px; border: 1px solid var(--glass-edge); background: var(--field); max-width: 380px; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+.cal-grid i { font-style: normal; font-size: .72rem; font-weight: 800; color: var(--muted); padding: 4px 0; }
+.cal-grid button { padding: 7px 0; min-width: 0; border-radius: 10px; font-weight: 600; }
+.cal-grid button.today { border-color: var(--purple); }
+.cal-grid button.sel { background: var(--purple); color: #fff; border-color: var(--purple); }
+.cal-check { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; color: var(--text); }
+.cal-time { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.cal-time select { width: auto; }
+.ampm { display: flex; gap: 4px; margin-left: 6px; }
+.ampm button.on { background: var(--purple); color: #fff; border-color: var(--purple); }
+.cal-year { margin-top: 12px; }
+.cal-year input { width: 110px; }

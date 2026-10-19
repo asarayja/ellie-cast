@@ -130,11 +130,12 @@
       status: BOOK_STATUS.includes(b.status) ? b.status : 'published',
       title: i18n(b.title), series: i18n(b.series), genre: i18n(b.genre), blurb: i18n(b.blurb), excerpt: i18n(b.excerpt),
       warnings: i18n(b.warnings),
+      release: normRelease(b),
       links: (b.links || []).map((l) => ({ label: i18n(l.label), url: l.url || '' })),
       reviews: (b.reviews || []).map((r) => ({ quote: i18n(r.quote), source: r.source || '', stars: String(r.stars || '') })),
     }));
     d.news = (d.news || []).map((n) => ({
-      id: '', date: '', image: '', book: '', ...n,
+      id: '', date: '', time: '', tz: '', image: '', book: '', ...n,
       title: i18n(n.title), text: i18n(n.text),
       link: { label: i18n(n.link?.label), url: n.link?.url || '' },
     }));
@@ -153,6 +154,17 @@
       tracks: (a.tracks || []).map((tk) => ({ title: tk.title || '', src: tk.src || '', ...(tk.duration ? { duration: tk.duration } : {}) })),
     }));
     return d;
+  }
+  // Utgivelse: { date: 'YYYY-MM-DD', time: 'HH:MM' (24 t) eller '', tz: 'America/New_York' }.
+  // Eldre bøker har bare tekst i «year»; en hel dato der («June 26, 2026») flyttes inn hit.
+  function normRelease(b) {
+    const r = { date: '', time: '', tz: '', ...b.release };
+    if (!r.date) {
+      const s = String(b.year || '').trim();
+      const d = /\b\d{1,2}\b/.test(s.replace(/\d{4}/, '')) ? new Date(`${s} 12:00`) : null;
+      if (d && !isNaN(d)) r.date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    return r;
   }
   function normFact(f) { return { label: i18n(f.label), value: i18n(f.value) }; }
 
@@ -665,7 +677,7 @@
       if (b.dataset.view === 'new-album') return addAlbum();
       if (b.dataset.view === 'new-post') return addPost();
       if (b.dataset.view === 'new-event') return addEvent();
-      view = b.dataset.view; renderNav(); renderEditor(); $('#side').classList.remove('open');
+      view = b.dataset.view; cal = { obj: null, ym: '' }; renderNav(); renderEditor(); $('#side').classList.remove('open');
       window.scrollTo(0, 0);
     });
     renderNav(); renderEditor(); updateStatus();
@@ -715,6 +727,99 @@
       : `<input type="text" data-path="${p}" value="${esc(getPath(p))}">`;
     return `<div class="field"><label>${label}</label>${input}</div>`;
   };
+
+  // ---------- Kalender ----------
+  // Egen kalender med AM/PM (det eieren bruker) og tidssone. Lagrer { date, time (24 t), tz } i objektet på objPath.
+  // Siden selv viser dato og klokkeslett etter hvor besøkende er.
+
+  const BROWSER_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { return 'UTC'; } })();
+  const TZS = (() => { try { return Intl.supportedValuesOf('timeZone'); } catch (e) { return [BROWSER_TZ]; } })();
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const usDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' });
+  const usTime = (t) => { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+  const tzShort = (iso, tz) => {
+    try { return new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' }).formatToParts(new Date(`${iso}T12:00:00Z`)).find((x) => x.type === 'timeZoneName').value; } catch (e) { return tz; }
+  };
+  const isoToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  let cal = { obj: null, ym: '' };
+
+  function dateField(label, objPath, yearPath) {
+    const o = getPath(objPath);
+    const text = o.date ? `${usDate(o.date)}${o.time ? ` · ${usTime(o.time)} ${tzShort(o.date, o.tz || BROWSER_TZ)}` : ''}` : (yearPath ? getPath(yearPath) : '');
+    const y = yearPath ? ` data-year="${yearPath}"` : '';
+    return `<div class="field"><label>${label}</label>
+      <button type="button" class="cal-btn" data-act="cal-toggle" data-obj="${objPath}"${y}>📅 <span>${esc(text || 'Velg dato')}</span></button>
+      ${cal.obj === objPath ? calendarHTML(objPath, yearPath) : ''}
+    </div>`;
+  }
+
+  function calendarHTML(objPath, yearPath) {
+    const o = getPath(objPath);
+    const [Y, M] = cal.ym.split('-').map(Number);
+    const first = new Date(Date.UTC(Y, M - 1, 1)).getUTCDay();
+    const days = new Date(Date.UTC(Y, M, 0)).getUTCDate();
+    const d = (iso) => `data-obj="${objPath}"${yearPath ? ` data-year="${yearPath}"` : ''}`;
+    const cells = [];
+    for (let i = 0; i < first; i++) cells.push('<span></span>');
+    for (let n = 1; n <= days; n++) {
+      const iso = `${Y}-${String(M).padStart(2, '0')}-${String(n).padStart(2, '0')}`;
+      cells.push(`<button type="button" data-act="cal-day" data-date="${iso}" ${d()} class="${iso === o.date ? 'sel' : ''} ${iso === isoToday() ? 'today' : ''}">${n}</button>`);
+    }
+    let time = '';
+    if (o.time) {
+      const [h, m] = o.time.split(':').map(Number);
+      const mins = [...new Set([...Array(12)].map((_, i) => i * 5).concat(m))].sort((a, b) => a - b);
+      time = `
+        <div class="cal-time">
+          <select data-cal="hour" ${d()} aria-label="Time">${[...Array(12)].map((_, i) => i + 1).map((v) => `<option ${v === (h % 12 || 12) ? 'selected' : ''}>${v}</option>`).join('')}</select>
+          <span>:</span>
+          <select data-cal="min" ${d()} aria-label="Minutt">${mins.map((v) => `<option value="${v}" ${v === m ? 'selected' : ''}>${String(v).padStart(2, '0')}</option>`).join('')}</select>
+          <div class="ampm">
+            <button type="button" data-act="cal-ampm" data-v="AM" ${d()} class="${h < 12 ? 'on' : ''}">AM</button>
+            <button type="button" data-act="cal-ampm" data-v="PM" ${d()} class="${h >= 12 ? 'on' : ''}">PM</button>
+          </div>
+        </div>
+        <div class="field" style="margin:10px 0 0"><label>Tidssone</label>
+          <select data-cal="tz" ${d()}>${TZS.map((z) => `<option ${z === (o.tz || BROWSER_TZ) ? 'selected' : ''}>${esc(z)}</option>`).join('')}</select>
+          <p class="small muted" style="margin:4px 0 0">Tiden du velger gjelder i denne tidssonen. På siden ser hver besøkende den i sin egen tid.</p>
+        </div>`;
+    }
+    return `
+      <div class="cal">
+        <div class="cal-head">
+          <button type="button" class="icon" data-act="cal-month" data-d="-1" ${d()} aria-label="Forrige måned">‹</button>
+          <b>${MONTHS[M - 1]} ${Y}</b>
+          <button type="button" class="icon" data-act="cal-month" data-d="1" ${d()} aria-label="Neste måned">›</button>
+        </div>
+        <div class="cal-grid">${['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((w) => `<i>${w}</i>`).join('')}${cells.join('')}</div>
+        <label class="cal-check"><input type="checkbox" data-cal="timeon" ${d()} ${o.time ? 'checked' : ''}> Klokkeslett</label>
+        ${time}
+        ${yearPath ? `<div class="cal-year"><label>Vet bare året?</label><input type="text" data-cal="year" ${d()} maxlength="4" inputmode="numeric" placeholder="2027" value="${o.date ? '' : esc(getPath(yearPath) || '')}"></div>` : ''}
+        <div class="row" style="justify-content:space-between;margin-top:12px">
+          <button type="button" class="danger" data-act="cal-clear" ${d()}>Fjern dato</button>
+          <button type="button" class="primary" data-act="cal-toggle" ${d()}>Ferdig</button>
+        </div>
+      </div>`;
+  }
+
+  function onCalInput(el) {
+    const o = getPath(el.dataset.obj);
+    const k = el.dataset.cal;
+    const [h, m] = (o.time || '12:00').split(':').map(Number);
+    const set = (hh, mm) => { o.time = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; };
+    if (k === 'timeon') { o.time = el.checked ? (o.time || '12:00') : ''; if (el.checked && !o.tz) o.tz = BROWSER_TZ; }
+    else if (k === 'hour') set((+el.value % 12) + (h >= 12 ? 12 : 0), m);
+    else if (k === 'min') set(h, +el.value);
+    else if (k === 'tz') o.tz = el.value;
+    else if (k === 'year') {
+      const v = el.value.replace(/\D/g, '').slice(0, 4);
+      setPath(el.dataset.year, v);
+      if (v) { o.date = ''; o.time = ''; }
+      markDirty();
+      return; // ikke tegn på nytt mens hun skriver
+    }
+    markDirty(); renderEditor();
+  }
 
   const imageField = (label, path, hint = '') => {
     const v = getPath(path);
@@ -887,10 +992,10 @@
               <option value="hidden" ${b.status === 'hidden' ? 'selected' : ''}>Skjult – vises ikke</option>
             </select></div>
           ${textField('Nettadresse-navn (id)', `${p}.id`, 'pattern="[a-z0-9-]+"')}
-          ${textField('Utgitt (år eller dato)', `${p}.year`, 'maxlength="24" placeholder="June 26, 2026"')}
+          ${dateField('Utgitt / kommer', `${p}.release`, `${p}.year`)}
           ${textField('Sider', `${p}.pages`, 'maxlength="8"')}
         </div>
-        <p class="small muted" style="margin-top:-8px">Med status «Kommer» og full dato (f.eks. «March 3, 2027») får boka nedtelling på siden og på forsiden.</p>
+        <p class="small muted" style="margin-top:-8px">Med status «Kommer» og en dato i kalenderen får boka nedtelling på siden og på forsiden.</p>
         ${langField('Sjanger', `${p}.genre`)}
         ${langField('Serie (valgfritt)', `${p}.series`)}
       </div>
@@ -970,7 +1075,7 @@
       <div class="card">
         ${langField('Overskrift', `${p}.title`)}
         <div class="grid2">
-          <div class="field"><label>Dato</label><input type="date" data-path="${p}.date" value="${esc(n.date)}"></div>
+          ${dateField('Dato', p)}
           ${textField('Nettadresse-navn (id)', `${p}.id`, 'pattern="[a-z0-9-]+"')}
         </div>
         <div class="field"><label>Vis en bok (valgfritt)</label>
@@ -1087,6 +1192,7 @@
 
   function onInput(e) {
     const el = e.target;
+    if (el.dataset.cal) return onCalInput(el);
     const path = el.dataset.path;
     if (!path) return;
     let value = el.value;
@@ -1112,6 +1218,33 @@
     const d = +btn.dataset.d;
     const list = path ? getPath(path) : null;
     const refresh = () => { markDirty(); renderNav(); renderEditor(); };
+
+    if (act.startsWith('cal-')) {
+      const o = getPath(btn.dataset.obj);
+      if (act === 'cal-toggle') {
+        cal = cal.obj === btn.dataset.obj ? { obj: null, ym: '' } : { obj: btn.dataset.obj, ym: (o.date || isoToday()).slice(0, 7) };
+      } else if (act === 'cal-month') {
+        const [y, m] = cal.ym.split('-').map(Number);
+        const t = new Date(Date.UTC(y, m - 1 + d, 1));
+        cal.ym = `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}`;
+      } else if (act === 'cal-day') {
+        o.date = btn.dataset.date;
+        if (btn.dataset.year) setPath(btn.dataset.year, usDate(o.date)); // lesbar reserve for eldre kode
+        markDirty();
+      } else if (act === 'cal-ampm') {
+        const [h, m] = (o.time || '12:00').split(':').map(Number);
+        const hh = (h % 12) + (btn.dataset.v === 'PM' ? 12 : 0);
+        o.time = `${String(hh).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        markDirty();
+      } else if (act === 'cal-clear') {
+        o.date = ''; o.time = '';
+        if (btn.dataset.year) setPath(btn.dataset.year, '');
+        cal = { obj: null, ym: '' };
+        markDirty();
+      }
+      renderEditor();
+      return;
+    }
 
     switch (act) {
       case 'upload': {
@@ -1258,7 +1391,7 @@
     data.books.push({
       id: `bok-${n}`, title: { no: 'Ny bok', en: 'New book' }, status: 'hidden', year: '', pages: '', cover: '', color: '#23203a',
       series: { no: '', en: '' }, genre: { no: '', en: '' }, blurb: { no: '', en: '' }, excerpt: { no: '', en: '' }, links: [],
-      warnings: { no: '', en: '' }, reviews: [],
+      warnings: { no: '', en: '' }, reviews: [], release: { date: '', time: '', tz: '' },
     });
     view = `book:${data.books.length - 1}`;
     markDirty(); renderNav(); renderEditor();
@@ -1270,7 +1403,7 @@
     const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     let id = `nyhet-${date}`;
     for (let n = 2; data.news.some((x) => x.id === id); n++) id = `nyhet-${date}-${n}`;
-    data.news.unshift({ id, date, image: '', book: '', title: { no: '', en: 'New post' }, text: { no: '', en: '' }, link: { label: { no: '', en: '' }, url: '' } });
+    data.news.unshift({ id, date, time: '', tz: '', image: '', book: '', title: { no: '', en: 'New post' }, text: { no: '', en: '' }, link: { label: { no: '', en: '' }, url: '' } });
     view = 'post:0';
     markDirty(); renderNav(); renderEditor();
   }

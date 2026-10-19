@@ -46,22 +46,59 @@
   };
 
   const books = () => (data.books || []).filter((b) => b.status !== 'hidden');
-  const posts = () => (data.news || []).filter((p) => p.id && tr(p.title)).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const posts = () => (data.news || []).filter((p) => p.id && tr(p.title)).sort((a, b) => `${b.date} ${b.time || ''}`.localeCompare(`${a.date} ${a.time || ''}`));
+  // Datoer og klokkeslett vises på engelsk, men slik besøkende er vant til: 24-timers klokke og dag før måned
+  // i Europa (26 June 2026, 15:00), AM/PM i USA (June 26, 2026, 9:00 AM). Klokkeslett vises i besøkendes egen tidssone.
+  const LOCALE = (() => {
+    try { return new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hour12 ? 'en-US' : 'en-GB'; } catch (e) { return 'en-US'; }
+  })();
   const fmtDate = (d) => {
-    const dt = /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? new Date(`${d}T12:00:00`) : null;
-    return dt && !isNaN(dt) ? dt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : (d || '');
+    const dt = /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? new Date(`${d}T12:00:00Z`) : null;
+    return dt && !isNaN(dt) ? dt.toLocaleDateString(LOCALE, { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' }) : (d || '');
   };
+  // Klokkeslett i en tidssone (f.eks. 09:00 i America/New_York) → riktig øyeblikk
+  function zonedTime(date, time, tz) {
+    const [y, m, d] = date.split('-').map(Number), [h, mi] = time.split(':').map(Number);
+    const guess = Date.UTC(y, m - 1, d, h, mi);
+    const offset = (at) => {
+      const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(at).map((x) => [x.type, x.value]));
+      return Date.UTC(+p.year, p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - at;
+    };
+    let t = guess - offset(guess);
+    t = guess - offset(t);
+    return new Date(t);
+  }
   const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const events = () => (data.events || []).filter((e) => /^\d{4}-\d{2}-\d{2}$/.test(e.date || '') && tr(e.title));
   const upcomingEvents = () => events().filter((e) => e.date >= isoDay(new Date())).sort((a, b) => a.date.localeCompare(b.date) || String(a.time).localeCompare(String(b.time)));
   const pastEvents = () => events().filter((e) => e.date < isoDay(new Date())).sort((a, b) => b.date.localeCompare(a.date));
-  // Utgivelsesdato for nedtelling: må ha dag, måned og år («March 3, 2027» eller 2027-03-03)
+  // Utgivelse: { date: '2026-06-26', time: '09:00' eller '', tz: 'America/New_York' }. Uten klokkeslett
+  // regnes midnatt der besøkende er. Eldre bøker har bare tekst i «year» (f.eks. «June 26, 2026» eller «2027»).
   const releaseDate = (b) => {
+    const r = b.release || {};
+    if (/^\d{4}-\d{2}-\d{2}$/.test(r.date || '')) {
+      if (/^\d{2}:\d{2}$/.test(r.time || '') && r.tz) { try { return zonedTime(r.date, r.time, r.tz); } catch (e) {} }
+      return new Date(`${r.date}T${r.time || '00:00'}:00`);
+    }
     const s = String(b.year || '').trim();
-    const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T00:00:00`) : /\b\d{1,2}\b/.test(s.replace(/\d{4}/, '')) ? new Date(s) : null;
+    const d = /\b\d{1,2}\b/.test(s.replace(/\d{4}/, '')) ? new Date(s) : null;
     return d && !isNaN(d) ? d : null;
   };
+  const releaseText = (b, withTime) => {
+    const r = b.release || {};
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date || '')) return b.year || '';
+    if (withTime && r.time && r.tz) {
+      return releaseDate(b).toLocaleString(LOCALE, { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+    }
+    return fmtDate(r.date);
+  };
   const counting = (b) => b.status === 'upcoming' && releaseDate(b) > new Date();
+  const newsDate = (p) => {
+    if (/^\d{2}:\d{2}$/.test(p.time || '') && p.tz && /^\d{4}-\d{2}-\d{2}$/.test(p.date || '')) {
+      try { return zonedTime(p.date, p.time, p.tz).toLocaleString(LOCALE, { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }); } catch (e) {}
+    }
+    return fmtDate(p.date);
+  };
   const firstPara = (text, max = 180) => {
     const p = String(text || '').split(/\n\s*\n/)[0].replace(/\s+/g, ' ').trim();
     return p.length > max ? p.slice(0, max).replace(/\s+\S*$/, '') + ' …' : p;
@@ -99,7 +136,7 @@
 
   // ---------- Sider ----------
 
-  const metaLine = (b) => [b.status === 'upcoming' ? `${t('upcoming')} ${b.year || ''}`.trim() : b.year, tr(b.genre)].filter(Boolean).map(esc).join(' · ');
+  const metaLine = (b) => [b.status === 'upcoming' ? `${t('upcoming')} ${releaseText(b)}`.trim() : releaseText(b), tr(b.genre)].filter(Boolean).map(esc).join(' · ');
 
   function bookCard(b, i = 0) {
     return `
@@ -277,7 +314,7 @@
         ${pb ? `<div class="news-img news-book" style="--b:${safeColor(pb.color)}">${bookHTML(pb)}</div>`
           : p.image ? `<div class="news-img"><img src="${esc(p.image)}" alt="" loading="lazy"></div>` : ''}
         <div class="news-body">
-          ${p.date ? `<time datetime="${esc(p.date)}">${esc(fmtDate(p.date))}</time>` : ''}
+          ${p.date ? `<time datetime="${esc(p.date)}">${esc(newsDate(p))}</time>` : ''}
           <h3>${esc(tr(p.title))}</h3>
           ${tr(p.text) ? `<p>${esc(firstPara(tr(p.text)))}</p>` : ''}
           <span class="link">${t('read_post')} →</span>
@@ -301,7 +338,7 @@
           <div class="hero-halo" style="--b:${safeColor(pb.color)}"></div>${bookHTML(pb)}
         </a>` : ''}
         <article class="post glass reveal" style="--d:120ms">
-          ${p.date ? `<time datetime="${esc(p.date)}">${esc(fmtDate(p.date))}</time>` : ''}
+          ${p.date ? `<time datetime="${esc(p.date)}">${esc(newsDate(p))}</time>` : ''}
           <h1>${esc(tr(p.title))}</h1>
           ${p.image && !pb ? `<img class="post-img" src="${esc(p.image)}" alt="">` : ''}
           <div class="prose">${paragraphs(tr(p.text))}</div>
@@ -382,7 +419,7 @@
     const b = books().find((x) => x.id === id);
     if (!b) return viewNotFound();
     const links = (b.links || []).filter((l) => safeUrl(l.url));
-    const facts = [[t('series'), tr(b.series)], [b.status === 'upcoming' ? t('upcoming') : t('year'), b.year], [t('genre'), tr(b.genre)], [t('pages'), b.pages]].filter(([, v]) => v);
+    const facts = [[t('series'), tr(b.series)], [b.status === 'upcoming' ? t('upcoming') : t('year'), releaseText(b, b.status === 'upcoming')], [t('genre'), tr(b.genre)], [t('pages'), b.pages]].filter(([, v]) => v);
     const others = books().filter((x) => x !== b);
     const warnings = tr(b.warnings).split(/\n|,/).map((w) => w.trim()).filter(Boolean);
     const reviews = (b.reviews || []).filter((r) => tr(r.quote));
