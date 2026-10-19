@@ -129,8 +129,23 @@
       id: '', year: '', pages: '', cover: '', color: '#23203a', ...b,
       status: BOOK_STATUS.includes(b.status) ? b.status : 'published',
       title: i18n(b.title), series: i18n(b.series), genre: i18n(b.genre), blurb: i18n(b.blurb), excerpt: i18n(b.excerpt),
+      warnings: i18n(b.warnings),
       links: (b.links || []).map((l) => ({ label: i18n(l.label), url: l.url || '' })),
+      reviews: (b.reviews || []).map((r) => ({ quote: i18n(r.quote), source: r.source || '', stars: String(r.stars || '') })),
     }));
+    d.news = (d.news || []).map((n) => ({
+      id: '', date: '', image: '', ...n,
+      title: i18n(n.title), text: i18n(n.text),
+      link: { label: i18n(n.link?.label), url: n.link?.url || '' },
+    }));
+    d.events = (d.events || []).map((e) => ({
+      date: '', time: '', place: '', ...e,
+      title: i18n(e.title), text: i18n(e.text),
+      link: { label: i18n(e.link?.label), url: e.link?.url || '' },
+    }));
+    d.newsletter = { provider: '', buttondown: '', url: '', ...d.newsletter };
+    d.newsletter.title = i18n(d.newsletter.title);
+    d.newsletter.text = i18n(d.newsletter.text);
     d.music = d.music || {};
     d.music.albums = (d.music.albums || []).map((a) => ({
       id: '', artist: '', year: '', cover: '', ...a,
@@ -350,15 +365,30 @@
         const text = (p, body) => ({ path: repoPath(p), mode: '100644', type: 'blob', content: body });
         const entries = [text(DATA_PATH, JSON.stringify(content, null, 2) + '\n')];
 
-        // Discord, Messenger osv. leser ikke JavaScript, så delingsinfoen må stå rett i index.html.
+        // Discord, Messenger, Google osv. leser ikke JavaScript, så delingsinfo og strukturdata må stå rett i index.html.
+        const SEO = window.EC_SEO;
+        const site = new URL('../', location.href).href;
         const index = blobs.get(repoPath('index.html'));
         if (index) {
           try {
             const html = base64ToText((await api(`/git/blobs/${index.sha}`)).content);
-            const next = html.replace(/  <!-- deling:start[\s\S]*?<!-- deling:slutt -->/, shareMetaHTML(content));
+            let next = html.replace(/  <!-- deling:start[\s\S]*?<!-- deling:slutt -->/, shareMetaHTML(content));
+            if (SEO) next = next.replace(SEO.DATA_BLOCK, SEO.indexLd(content, site));
             if (next !== html) entries.push(text('index.html', next));
           } catch (err) {
             console.warn('Klarte ikke å oppdatere delingsinfo i index.html', err);
+          }
+        }
+
+        // Egne sider uten # (bøker, nyheter, arrangementer, musikk, om og kontakt) og sitemap.xml, så Google finner alt. Sider for innhold som er slettet eller skjult, fjernes.
+        if (SEO) {
+          const generated = SEO.files(content, site);
+          const keep = new Set(Object.keys(generated).map(repoPath));
+          for (const [p, body] of Object.entries(generated)) entries.push(text(p, body));
+          const prefix = gh.folder.replace(/^\/+|\/+$/g, '');
+          for (const [p, b] of blobs) {
+            const rel = prefix ? (p.startsWith(prefix + '/') ? p.slice(prefix.length + 1) : null) : p;
+            if (rel && SEO.MANAGED.test(rel) && !keep.has(p)) entries.push({ path: p, mode: b.mode, type: 'blob', sha: null });
           }
         }
 
@@ -631,6 +661,8 @@
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.view === 'new') return addBook();
       if (b.dataset.view === 'new-album') return addAlbum();
+      if (b.dataset.view === 'new-post') return addPost();
+      if (b.dataset.view === 'new-event') return addEvent();
       view = b.dataset.view; renderNav(); renderEditor(); $('#side').classList.remove('open');
       window.scrollTo(0, 0);
     });
@@ -644,6 +676,13 @@
       ${item('general', '🏠 Forside')}
       ${item('about', '✍️ Om Ellie')}
       ${item('contact', '✉️ Kontakt')}
+      ${item('newsletter', '📬 Nyhetsbrev')}
+      <div class="group">Nyheter</div>
+      ${data.news.map((n, i) => item(`post:${i}`, `📰 ${esc(n.title.en || 'Uten tittel')}`)).join('')}
+      <button data-view="new-post" class="add">＋ Ny nyhet</button>
+      <div class="group">Arrangementer</div>
+      ${data.events.map((e, i) => item(`event:${i}`, `📅 ${esc(e.title.en || 'Uten navn')} <span class="muted small">${esc(e.date)}</span>`)).join('')}
+      <button data-view="new-event" class="add">＋ Nytt arrangement</button>
       <div class="group">Bøker</div>
       ${data.books.map((b, i) => item(`book:${i}`, `📖 ${esc(b.title.en || 'Uten tittel')}${statusNote(b)}`)).join('')}
       <button data-view="new" class="add">＋ Ny bok</button>
@@ -776,6 +815,42 @@
           <h3 style="margin-top:0">Sosiale medier og andre lenker</h3>
           ${linksEditor('contact.links', false)}
         </div>`;
+    } else if (view === 'newsletter') {
+      const n = data.newsletter;
+      ed.innerHTML = `
+        <h2>Nyhetsbrev</h2>
+        <div class="card">
+          <p class="small muted">Lesere kan melde seg på og få e-post når det kommer nye bøker. Påmeldingen vises på forsiden,
+            på boksidene og under Nyheter. Den er skjult til du har valgt en tjeneste her.</p>
+          <div class="field"><label>Tjeneste</label>
+            <select data-path="newsletter.provider">
+              <option value="" ${!n.provider ? 'selected' : ''}>Av – vises ikke på siden</option>
+              <option value="buttondown" ${n.provider === 'buttondown' ? 'selected' : ''}>Buttondown – skjema rett på siden (anbefalt)</option>
+              <option value="link" ${n.provider === 'link' ? 'selected' : ''}>En annen tjeneste – knapp med lenke (MailerLite, Substack …)</option>
+            </select></div>
+          ${n.provider === 'buttondown' ? `
+            ${textField('Brukernavn på Buttondown', 'newsletter.buttondown', 'placeholder="elliecast" autocomplete="off"')}
+            <p class="small muted">Lag en gratis konto på <a href="https://buttondown.com" target="_blank" rel="noopener">buttondown.com</a>
+              og skriv brukernavnet her. Påmeldte lesere og utsending av e-post styrer du inne på Buttondown.</p>` : ''}
+          ${n.provider === 'link' ? `
+            ${textField('Lenke til påmeldingssiden', 'newsletter.url', 'placeholder="https://…"')}` : ''}
+        </div>
+        ${n.provider ? `
+        <div class="card">
+          <h3 style="margin-top:0">Tekst</h3>
+          <p class="small muted">Tomt = standardteksten («Be the first to know» …).</p>
+          ${langField('Overskrift', 'newsletter.title')}
+          ${langField('Tekst', 'newsletter.text', true)}
+        </div>` : ''}
+        <div class="card">
+          <h3 style="margin-top:0">Personvern</h3>
+          <p class="small muted">Siden har en egen personvernside (<a href="../#/privacy" target="_blank" rel="noopener">se den ↗</a>) som forteller
+            hvordan e-postadressene brukes. Den lages automatisk ut fra tjenesten du har valgt.</p>
+        </div>`;
+    } else if (view.startsWith('event:')) {
+      renderEvent(+view.slice(6));
+    } else if (view.startsWith('post:')) {
+      renderPost(+view.slice(5));
     } else if (view.startsWith('book:')) {
       renderBook(+view.slice(5));
     } else if (view.startsWith('album:')) {
@@ -813,6 +888,7 @@
           ${textField('Utgitt (år eller dato)', `${p}.year`, 'maxlength="24" placeholder="June 26, 2026"')}
           ${textField('Sider', `${p}.pages`, 'maxlength="8"')}
         </div>
+        <p class="small muted" style="margin-top:-8px">Med status «Kommer» og full dato (f.eks. «March 3, 2027») får boka nedtelling på siden og på forsiden.</p>
         ${langField('Sjanger', `${p}.genre`)}
         ${langField('Serie (valgfritt)', `${p}.series`)}
       </div>
@@ -838,10 +914,111 @@
         ${linksEditor(`${p}.links`, true)}
       </div>
 
+      <div class="card">
+        <h3 style="margin-top:0">Innholdsadvarsler</h3>
+        ${langField('Én per linje', `${p}.warnings`, true)}
+        <p class="small muted">F.eks. «Kidnapping». Vises sammenbrettet på boksiden, så bare de som vil se dem, åpner listen. Tomt = vises ikke.</p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0">Hva leserne sier</h3>
+        ${reviewsEditor(`${p}.reviews`)}
+      </div>
+
       <div class="card" style="border-color:rgba(194,26,43,.4)">
         <h3 style="margin-top:0">Slett bok</h3>
         <p class="small muted">Vil du bare skjule boka en stund? Bruk «Skjult» under Status i stedet.</p>
         <button class="danger" data-act="delete-book" data-i="${i}">Slett ${esc(b.title.en || 'boka')}</button>
+      </div>`;
+  }
+
+  const reviewsEditor = (path) => {
+    const list = getPath(path);
+    return `<div class="field">
+      ${list.map((r, i) => `
+        <div class="list-item" style="grid-template-columns:1fr">
+          <div><label>Sitat</label><textarea data-path="${path}.${i}.quote.en" placeholder="I couldn't put it down …">${esc(r.quote.en)}</textarea></div>
+          <div class="grid2">
+            <div><label>Hvem / hvor</label><input type="text" data-path="${path}.${i}.source" value="${esc(r.source)}" placeholder="Amazon reader"></div>
+            <div><label>Stjerner</label>
+              <select data-path="${path}.${i}.stars">
+                ${['', '5', '4', '3', '2', '1'].map((v) => `<option value="${v}" ${r.stars === v ? 'selected' : ''}>${v ? '★'.repeat(+v) : 'Ingen'}</option>`).join('')}
+              </select></div>
+          </div>
+          <div class="tools">
+            <button class="icon" data-act="move" data-path="${path}" data-i="${i}" data-d="-1" aria-label="Flytt opp" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button class="icon" data-act="move" data-path="${path}" data-i="${i}" data-d="1" aria-label="Flytt ned" ${i === list.length - 1 ? 'disabled' : ''}>↓</button>
+            <button class="icon danger" data-act="remove" data-path="${path}" data-i="${i}" aria-label="Slett">✕</button>
+          </div>
+        </div>`).join('')}
+      <button data-act="add-review" data-path="${path}">＋ Legg til anmeldelse</button>
+      <p class="small muted">Korte sitater fra anmeldelser på Amazon, Goodreads, TikTok og lignende. Vises under utdraget på boksiden.</p>
+    </div>`;
+  };
+
+  function renderPost(i) {
+    const n = data.news[i];
+    if (!n) { view = 'general'; renderNav(); return renderEditor(); }
+    const p = `news.${i}`;
+    $('#editor').innerHTML = `
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0">📰 ${esc(n.title.en || 'Ny nyhet')}</h2>
+        <a class="btn" href="../#/news/${encodeURIComponent(n.id)}" target="_blank" rel="noopener">Se ↗</a>
+      </div>
+      <div class="card">
+        ${langField('Overskrift', `${p}.title`)}
+        <div class="grid2">
+          <div class="field"><label>Dato</label><input type="date" data-path="${p}.date" value="${esc(n.date)}"></div>
+          ${textField('Nettadresse-navn (id)', `${p}.id`, 'pattern="[a-z0-9-]+"')}
+        </div>
+        ${imageField('Bilde (valgfritt)', `${p}.image`, 'Liggende bilde passer best.')}
+        ${langField('Tekst', `${p}.text`, true)}
+        <p class="small muted">Tom linje mellom avsnittene. Nyeste dato vises først på siden.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Knapp (valgfritt)</h3>
+        <div class="grid2">
+          ${langField('Tekst på knappen', `${p}.link.label`)}
+          ${textField('Lenke', `${p}.link.url`, 'placeholder="https://…"')}
+        </div>
+        <p class="small muted">F.eks. «Buy the book» med lenke til Amazon. Tom lenke = ingen knapp.</p>
+      </div>
+      <div class="card" style="border-color:rgba(194,26,43,.4)">
+        <h3 style="margin-top:0">Slett nyhet</h3>
+        <button class="danger" data-act="delete-post" data-i="${i}">Slett ${esc(n.title.en || 'nyheten')}</button>
+      </div>`;
+  }
+
+  function renderEvent(i) {
+    const e = data.events[i];
+    if (!e) { view = 'general'; renderNav(); return renderEditor(); }
+    const p = `events.${i}`;
+    $('#editor').innerHTML = `
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0">📅 ${esc(e.title.en || 'Nytt arrangement')}</h2>
+        <a class="btn" href="../#/events" target="_blank" rel="noopener">Se ↗</a>
+      </div>
+      <div class="card">
+        ${langField('Navn', `${p}.title`)}
+        <div class="grid2">
+          <div class="field"><label>Dato</label><input type="date" data-path="${p}.date" value="${esc(e.date)}"></div>
+          ${textField('Klokkeslett (valgfritt)', `${p}.time`, 'placeholder="7 pm EST"')}
+        </div>
+        ${textField('Sted', `${p}.place`, 'placeholder="Online – TikTok Live"')}
+        ${langField('Om arrangementet (valgfritt)', `${p}.text`, true)}
+        <p class="small muted">Arrangementer med dato fram i tid vises under «Upcoming» og på forsiden. Når datoen har vært, flyttes de automatisk til «Past events».</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Knapp (valgfritt)</h3>
+        <div class="grid2">
+          ${langField('Tekst på knappen', `${p}.link.label`)}
+          ${textField('Lenke', `${p}.link.url`, 'placeholder="https://…"')}
+        </div>
+        <p class="small muted">F.eks. «Get tickets» eller «Watch live». Tom lenke = ingen knapp.</p>
+      </div>
+      <div class="card" style="border-color:rgba(194,26,43,.4)">
+        <h3 style="margin-top:0">Slett arrangement</h3>
+        <button class="danger" data-act="delete-event" data-i="${i}">Slett ${esc(e.title.en || 'arrangementet')}</button>
       </div>`;
   }
 
@@ -906,16 +1083,17 @@
     if (!path) return;
     let value = el.value;
     if (path.endsWith('.id')) {
-      value = slug(value, path.startsWith('music.') ? 'album' : 'bok');
+      value = slug(value, path.startsWith('music.') ? 'album' : path.startsWith('news.') ? 'nyhet' : 'bok');
       if (e.type === 'change') el.value = value;
     }
     if (getPath(path) === value) return;
     setPath(path, value);
     markDirty();
-    if (/^books\.\d+\.(title\.en|status)$|^music\.albums\.\d+\.title\.en$/.test(path)) {
+    if (/^books\.\d+\.(title\.en|status)$|^music\.albums\.\d+\.title\.en$|^news\.\d+\.title\.en$|^events\.\d+\.(title\.en|date)$/.test(path)) {
       renderNav();
       if (view.startsWith('book:') && e.type === 'change') renderEditor();
     }
+    if (path === 'newsletter.provider') renderEditor();
   }
 
   async function onAction(e) {
@@ -954,6 +1132,19 @@
         const list2 = data.books;
         [list2[i], list2[j]] = [list2[j], list2[i]];
         view = `book:${j}`; refresh(); break;
+      }
+      case 'add-review': list.push({ quote: { no: '', en: '' }, source: '', stars: '' }); refresh(); break;
+      case 'delete-event': {
+        const ev = data.events[i];
+        if (!confirm(`Slette «${ev.title.en || 'arrangementet'}»?`)) return;
+        data.events.splice(i, 1);
+        view = 'general'; refresh(); break;
+      }
+      case 'delete-post': {
+        const n = data.news[i];
+        if (!confirm(`Slette nyheten «${n.title.en || 'uten tittel'}»?`)) return;
+        data.news.splice(i, 1);
+        view = 'general'; refresh(); break;
       }
       case 'add-link':
         list.push(btn.dataset.bilingual === '1' ? { label: { no: '', en: '' }, url: '' } : { label: '', url: '' });
@@ -995,6 +1186,8 @@
   function imageHint(path) {
     const m = path.match(/^books\.(\d+)/);
     if (m) return data.books[+m[1]].id || 'bok';
+    const n = path.match(/^news\.(\d+)/);
+    if (n) return data.news[+n[1]].id || 'nyhet';
     const a = path.match(/^music\.albums\.(\d+)/);
     if (a) return data.music.albums[+a[1]].id || 'album';
     return path.split('.')[0];
@@ -1057,10 +1250,27 @@
     data.books.push({
       id: `bok-${n}`, title: { no: 'Ny bok', en: 'New book' }, status: 'hidden', year: '', pages: '', cover: '', color: '#23203a',
       series: { no: '', en: '' }, genre: { no: '', en: '' }, blurb: { no: '', en: '' }, excerpt: { no: '', en: '' }, links: [],
+      warnings: { no: '', en: '' }, reviews: [],
     });
     view = `book:${data.books.length - 1}`;
     markDirty(); renderNav(); renderEditor();
     toast('Ny bok lagt til som «Skjult» – bytt status når den skal vises.');
+  }
+
+  function addPost() {
+    const today = new Date();
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    let id = `nyhet-${date}`;
+    for (let n = 2; data.news.some((x) => x.id === id); n++) id = `nyhet-${date}-${n}`;
+    data.news.unshift({ id, date, image: '', title: { no: '', en: 'New post' }, text: { no: '', en: '' }, link: { label: { no: '', en: '' }, url: '' } });
+    view = 'post:0';
+    markDirty(); renderNav(); renderEditor();
+  }
+
+  function addEvent() {
+    data.events.unshift({ date: '', time: '', place: '', title: { no: '', en: 'New event' }, text: { no: '', en: '' }, link: { label: { no: '', en: '' }, url: '' } });
+    view = 'event:0';
+    markDirty(); renderNav(); renderEditor();
   }
 
   function addAlbum() {
@@ -1082,6 +1292,17 @@
       if (!b.id) return `«${b.title.en}» mangler nettadresse-navn (id).`;
       if (ids.has(b.id)) return `To bøker har samme id: «${b.id}». Gi dem forskjellige.`;
       ids.add(b.id);
+    }
+    const postIds = new Set();
+    for (const n of data.news) {
+      if (!n.title.en.trim()) return 'En nyhet mangler overskrift.';
+      if (!n.id) return `Nyheten «${n.title.en}» mangler nettadresse-navn (id).`;
+      if (postIds.has(n.id)) return `To nyheter har samme id: «${n.id}». Gi dem forskjellige.`;
+      postIds.add(n.id);
+    }
+    for (const e of data.events) {
+      if (!e.title.en.trim()) return 'Et arrangement mangler navn.';
+      if (!e.date) return `«${e.title.en}» mangler dato.`;
     }
     const albumIds = new Set();
     for (const a of data.music.albums) {

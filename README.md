@@ -18,7 +18,9 @@ All colours are at the top of `assets/style.css`, in the block marked **FARGER**
 
 ## Pages
 
-`#/books`, `#/book/the-fragmented-collector`, `#/music`, `#/about`, `#/contact`
+`#/books`, `#/book/the-fragmented-collector`, `#/news`, `#/events`, `#/music`, `#/about`, `#/contact`, `#/privacy`
+
+Each book also has its own page that search engines and link previews can read, for example `books/the-fragmented-collector/`. These pages and `sitemap.xml` are generated automatically.
 
 ## Private files
 

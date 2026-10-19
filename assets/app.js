@@ -14,6 +14,14 @@
       search: 'Search for a song or album …', results: 'results', no_results: 'Nothing found. Try another word.',
       not_found: "Couldn't find that page.", go_home: 'Go home', load_error: "Couldn't load the content.",
       to_light: 'Switch to light theme', to_dark: 'Switch to dark theme', menu: 'Menu', role: 'Author',
+      nav_news: 'News', news: 'News', latest_news: 'Latest news', all_news: 'All news', back_news: '← All news', read_post: 'Read more',
+      nl_pill: 'Newsletter', nl_title: 'Be the first to know', nl_text: 'Get an email when there is a new book, a sneak peek or something else worth knowing. No spam.',
+      email_ph: 'Your email address', subscribe: 'Sign up', nl_note: 'Only news about the books. Unsubscribe at any time.', privacy_link: 'How your email is handled',
+      privacy: 'Privacy', cw: 'Content warnings', cw_hint: 'Some readers like to know before they start. Open to see the list.',
+      reviews: 'What readers say', stars: 'out of 5 stars', more_news: 'More news', copy_link: 'Copy link', copied: 'Link copied',
+      nav_events: 'Events', events: 'Events', upcoming_events: 'Upcoming events', past_events: 'Past events', all_events: 'All events',
+      no_events: 'No upcoming events right now. Check back soon, or sign up for the newsletter.',
+      out_in: 'Out in', out_now: 'Out now!', days: 'days', hours: 'hours', mins: 'minutes', secs: 'seconds', coming_book: 'Coming soon',
     },
   };
 
@@ -38,6 +46,26 @@
   };
 
   const books = () => (data.books || []).filter((b) => b.status !== 'hidden');
+  const posts = () => (data.news || []).filter((p) => p.id && tr(p.title)).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const fmtDate = (d) => {
+    const dt = /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? new Date(`${d}T12:00:00`) : null;
+    return dt && !isNaN(dt) ? dt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : (d || '');
+  };
+  const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const events = () => (data.events || []).filter((e) => /^\d{4}-\d{2}-\d{2}$/.test(e.date || '') && tr(e.title));
+  const upcomingEvents = () => events().filter((e) => e.date >= isoDay(new Date())).sort((a, b) => a.date.localeCompare(b.date) || String(a.time).localeCompare(String(b.time)));
+  const pastEvents = () => events().filter((e) => e.date < isoDay(new Date())).sort((a, b) => b.date.localeCompare(a.date));
+  // Utgivelsesdato for nedtelling: må ha dag, måned og år («March 3, 2027» eller 2027-03-03)
+  const releaseDate = (b) => {
+    const s = String(b.year || '').trim();
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T00:00:00`) : /\b\d{1,2}\b/.test(s.replace(/\d{4}/, '')) ? new Date(s) : null;
+    return d && !isNaN(d) ? d : null;
+  };
+  const counting = (b) => b.status === 'upcoming' && releaseDate(b) > new Date();
+  const firstPara = (text, max = 180) => {
+    const p = String(text || '').split(/\n\s*\n/)[0].replace(/\s+/g, ' ').trim();
+    return p.length > max ? p.slice(0, max).replace(/\s+\S*$/, '') + ' …' : p;
+  };
   const featured = () => books().find((b) => b.status === 'published') || books()[0];
 
   // ---------- Musikkdata ----------
@@ -136,6 +164,19 @@
         </div>` : ''}
       </section>
 
+      ${(() => {
+        const cb = books().find(counting);
+        return cb ? `
+      <section class="coming glass reveal">
+        <a class="coming-cover" href="#/book/${encodeURIComponent(cb.id)}">${bookHTML(cb)}</a>
+        <div>
+          <span class="pill accent">${t('coming_book')}</span>
+          <h2><a href="#/book/${encodeURIComponent(cb.id)}">${esc(tr(cb.title))}</a></h2>
+          ${countdownHTML(cb)}
+        </div>
+      </section>` : '';
+      })()}
+
       <section class="section">
         <div class="section-head">
           <h2>${t('books')}</h2>
@@ -144,7 +185,179 @@
         <div class="shelf">${books().map(bookCard).join('')}</div>
       </section>
 
+      ${posts().length ? `
+      <section class="section">
+        <div class="section-head">
+          <h2>${t('latest_news')}</h2>
+          <a class="link" href="#/news">${t('all_news')} →</a>
+        </div>
+        <div class="news-grid">${posts().slice(0, 3).map(newsCard).join('')}</div>
+      </section>` : ''}
+
+      ${upcomingEvents().length ? `
+      <section class="section">
+        <div class="section-head">
+          <h2>${t('upcoming_events')}</h2>
+          <a class="link" href="#/events">${t('all_events')} →</a>
+        </div>
+        <div class="events">${upcomingEvents().slice(0, 3).map(eventHTML).join('')}</div>
+      </section>` : ''}
+
+      ${newsletterHTML()}
       ${contactHTML()}`;
+  }
+
+  // ---------- Nedtelling ----------
+
+  function countdownHTML(b) {
+    if (!counting(b)) return '';
+    const unit = (u, label) => `<div><b data-u="${u}">0</b><small>${t(label)}</small></div>`;
+    return `
+      <div class="countdown" data-countdown="${releaseDate(b).getTime()}">
+        <span class="cd-label">${t('out_in')}</span>
+        <div class="cd-boxes">${unit('d', 'days')}${unit('h', 'hours')}${unit('m', 'mins')}${unit('s', 'secs')}</div>
+      </div>`;
+  }
+
+  function tick() {
+    document.querySelectorAll('[data-countdown]').forEach((el) => {
+      const left = +el.dataset.countdown - Date.now();
+      if (left <= 0) { el.innerHTML = `<span class="cd-done">${t('out_now')}</span>`; el.removeAttribute('data-countdown'); return; }
+      const v = { d: Math.floor(left / 864e5), h: Math.floor(left / 36e5) % 24, m: Math.floor(left / 6e4) % 60, s: Math.floor(left / 1e3) % 60 };
+      el.querySelectorAll('[data-u]').forEach((b) => { b.textContent = v[b.dataset.u]; });
+    });
+  }
+  setInterval(tick, 1000);
+
+  // ---------- Arrangementer ----------
+
+  function eventHTML(e, i = 0) {
+    const d = new Date(`${e.date}T12:00:00`);
+    const link = e.link && safeUrl(e.link.url) ? e.link : null;
+    const meta = [e.time, e.place].filter(Boolean).map(esc).join(' · ');
+    return `
+      <article class="event glass reveal" style="--d:${i * 70}ms">
+        <time class="ev-date" datetime="${esc(e.date)}">
+          <span class="ev-mon">${d.toLocaleDateString('en-US', { month: 'short' })}</span>
+          <span class="ev-day">${d.getDate()}</span>
+          <span class="ev-year">${d.getFullYear()}</span>
+        </time>
+        <div class="ev-body">
+          <h3>${esc(tr(e.title))}</h3>
+          ${meta ? `<p class="ev-meta">${meta}</p>` : ''}
+          ${tr(e.text) ? `<div class="prose">${paragraphs(tr(e.text))}</div>` : ''}
+          ${link ? `<a class="btn small" href="${esc(safeUrl(link.url))}" target="_blank" rel="noopener">${esc(tr(link.label) || t('read_post'))}</a>` : ''}
+        </div>
+      </article>`;
+  }
+
+  function viewEvents() {
+    if (!events().length) return viewNotFound();
+    const up = upcomingEvents(), past = pastEvents();
+    return `
+      <div class="page-head reveal"><span class="pill">${esc(data.site.name)}</span><h1>${t('events')}</h1></div>
+      ${up.length ? `<div class="events">${up.map(eventHTML).join('')}</div>` : `<p class="muted reveal">${t('no_events')}</p>`}
+      ${past.length ? `
+      <section class="section">
+        <div class="section-head"><h2>${t('past_events')}</h2></div>
+        <div class="events past">${past.map(eventHTML).join('')}</div>
+      </section>` : ''}
+      ${newsletterHTML()}`;
+  }
+
+  // ---------- Nyheter ----------
+
+  function newsCard(p, i = 0) {
+    return `
+      <a class="news-card glass reveal" href="#/news/${encodeURIComponent(p.id)}" style="--d:${i * 70}ms">
+        ${p.image ? `<div class="news-img"><img src="${esc(p.image)}" alt="" loading="lazy"></div>` : ''}
+        <div class="news-body">
+          ${p.date ? `<time datetime="${esc(p.date)}">${esc(fmtDate(p.date))}</time>` : ''}
+          <h3>${esc(tr(p.title))}</h3>
+          ${tr(p.text) ? `<p>${esc(firstPara(tr(p.text)))}</p>` : ''}
+          <span class="link">${t('read_post')} →</span>
+        </div>
+      </a>`;
+  }
+
+  function viewNews(id) {
+    if (!posts().length) return viewNotFound();
+    if (id) {
+      const p = posts().find((x) => x.id === id);
+      if (!p) return viewNotFound();
+      const link = p.link && safeUrl(p.link.url) ? p.link : null;
+      const more = posts().filter((x) => x !== p).slice(0, 3);
+      return `
+        <a class="back" href="#/news">${t('back_news')}</a>
+        <article class="post glass reveal">
+          ${p.date ? `<time datetime="${esc(p.date)}">${esc(fmtDate(p.date))}</time>` : ''}
+          <h1>${esc(tr(p.title))}</h1>
+          ${p.image ? `<img class="post-img" src="${esc(p.image)}" alt="">` : ''}
+          <div class="prose">${paragraphs(tr(p.text))}</div>
+          <div class="actions">
+            ${link ? `<a class="btn" href="${esc(safeUrl(link.url))}" target="_blank" rel="noopener">${esc(tr(link.label) || t('read_post'))}</a>` : ''}
+            <a class="btn ghost" href="news/${encodeURIComponent(p.id)}/" data-copy>${t('copy_link')}</a>
+          </div>
+        </article>
+        ${more.length ? `
+        <section class="section">
+          <div class="section-head"><h2>${t('more_news')}</h2><a class="link" href="#/news">${t('all_news')} →</a></div>
+          <div class="news-grid">${more.map(newsCard).join('')}</div>
+        </section>` : ''}
+        ${newsletterHTML()}`;
+    }
+    return `
+      <div class="page-head reveal"><span class="pill">${esc(data.site.name)}</span><h1>${t('news')}</h1></div>
+      <div class="news-grid">${posts().map(newsCard).join('')}</div>
+      ${newsletterHTML()}`;
+  }
+
+  // ---------- Nyhetsbrev ----------
+  // Buttondown: skjema rett på siden. «link»: knapp til en annen tjeneste (MailerLite, Substack …).
+
+  function newsletter() {
+    const n = data.newsletter || {};
+    if (n.provider === 'buttondown' && /^[A-Za-z0-9_-]+$/.test(n.buttondown || '')) return { ...n, kind: 'form', service: 'Buttondown' };
+    if (n.provider === 'link' && safeUrl(n.url)) return { ...n, kind: 'link', service: '' };
+    return null;
+  }
+
+  function newsletterHTML() {
+    const n = newsletter();
+    if (!n) return '';
+    const action = n.kind === 'form'
+      ? `<form class="nl-form" action="https://buttondown.com/api/emails/embed-subscribe/${esc(n.buttondown)}" method="post" target="_blank">
+          <input type="email" name="email" required placeholder="${t('email_ph')}" aria-label="${t('email_ph')}" autocomplete="email">
+          <button class="btn" type="submit">${t('subscribe')}</button>
+        </form>`
+      : `<div class="actions"><a class="btn" href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener">${t('subscribe')} →</a></div>`;
+    return `
+      <section class="newsletter glass reveal">
+        <div>
+          <span class="pill">${t('nl_pill')}</span>
+          <h2>${esc(tr(n.title) || t('nl_title'))}</h2>
+          <p>${esc(tr(n.text) || t('nl_text'))}</p>
+        </div>
+        <div>
+          ${action}
+          <p class="nl-note">${t('nl_note')} <a href="#/privacy">${t('privacy_link')}</a></p>
+        </div>
+      </section>`;
+  }
+
+  function viewPrivacy() {
+    const n = newsletter();
+    const email = /^[^\s@]+@[^\s@]+$/.test(data.contact?.email || '') ? data.contact.email : '';
+    const parts = [
+      'This website does not use cookies, ads or tracking.',
+      'Your browser remembers a few small settings, like light or dark theme and the music volume. They are stored only on your own device and are never sent anywhere.',
+      n ? `If you sign up for the newsletter, your email address is stored by ${n.service || 'the newsletter service'} and used only to send news about the books. Every email has a link to unsubscribe, and you can ask to have your address deleted at any time.` : '',
+      'The fonts are loaded from Google Fonts, and the site is hosted on GitHub Pages. Like most websites, they can see your IP address when the page loads.',
+      email ? `Questions? Send an email to ${email}.` : '',
+    ].filter(Boolean);
+    return `
+      <div class="page-head reveal"><span class="pill">${esc(data.site.name)}</span><h1>${t('privacy')}</h1></div>
+      <div class="prose privacy reveal">${parts.map((x) => `<p>${esc(x)}</p>`).join('')}</div>`;
   }
 
   function viewBooks() {
@@ -159,6 +372,8 @@
     const links = (b.links || []).filter((l) => safeUrl(l.url));
     const facts = [[t('series'), tr(b.series)], [b.status === 'upcoming' ? t('upcoming') : t('year'), b.year], [t('genre'), tr(b.genre)], [t('pages'), b.pages]].filter(([, v]) => v);
     const others = books().filter((x) => x !== b);
+    const warnings = tr(b.warnings).split(/\n|,/).map((w) => w.trim()).filter(Boolean);
+    const reviews = (b.reviews || []).filter((r) => tr(r.quote));
     return `
       <a class="back" href="#/books">${t('back')}</a>
       <article class="book-page">
@@ -167,9 +382,19 @@
           ${b.status === 'upcoming' ? `<span class="pill accent">${t('coming')}</span>` : ''}
           <h1>${esc(tr(b.title))}</h1>
           <p class="byline">${esc(data.site.name)}</p>
+          ${countdownHTML(b)}
           <div class="prose">${paragraphs(tr(b.blurb))}</div>
           ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}
-          ${links.length ? `<div class="actions">${links.map((l, i) => `<a class="btn ${i ? 'ghost' : ''}" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">${esc(tr(l.label))}</a>`).join('')}</div>` : ''}
+          ${warnings.length ? `
+          <details class="cw">
+            <summary>${t('cw')}</summary>
+            <p class="muted">${t('cw_hint')}</p>
+            <ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>
+          </details>` : ''}
+          <div class="actions">
+            ${links.map((l, i) => `<a class="btn ${i ? 'ghost' : ''}" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">${esc(tr(l.label))}</a>`).join('')}
+            <a class="btn ghost" href="books/${encodeURIComponent(b.id)}/" data-copy>${t('copy_link')}</a>
+          </div>
         </div>
       </article>
       ${tr(b.excerpt) ? `
@@ -177,6 +402,18 @@
         <span class="pill">${t('excerpt')}</span>
         <div class="excerpt-text">${paragraphs(tr(b.excerpt))}</div>
       </section>` : ''}
+      ${reviews.length ? `
+      <section class="section">
+        <div class="section-head"><h2>${t('reviews')}</h2></div>
+        <div class="reviews">${reviews.map((r, i) => `
+          <figure class="review glass reveal" style="--d:${i * 70}ms">
+            ${+r.stars ? `<div class="stars" role="img" aria-label="${+r.stars} ${t('stars')}">${'★'.repeat(+r.stars)}<span>${'★'.repeat(5 - +r.stars)}</span></div>` : ''}
+            <blockquote>${esc(tr(r.quote))}</blockquote>
+            ${r.source ? `<figcaption>${esc(r.source)}</figcaption>` : ''}
+          </figure>`).join('')}
+        </div>
+      </section>` : ''}
+      ${newsletterHTML()}
       ${others.length ? `
       <section class="section">
         <div class="section-head"><h2>${t('more_books')}</h2></div>
@@ -310,11 +547,20 @@
       html = viewMusic(id);
       title = id ? tr(albums().find((a) => a.id === id)?.title) : t('music');
     }
+    else if (parts[0] === 'news') {
+      route = 'news';
+      const id = parts[1] ? decodeURIComponent(parts[1]) : '';
+      html = viewNews(id);
+      title = id ? tr(posts().find((x) => x.id === id)?.title) : t('news');
+    }
+    else if (parts[0] === 'events') { route = 'events'; html = viewEvents(); title = t('events'); }
+    else if (parts[0] === 'privacy') { route = ''; html = viewPrivacy(); title = t('privacy'); }
     else if (parts[0] === 'about') { route = 'about'; html = viewAbout(); title = t('about_me'); }
     else if (parts[0] === 'contact') { route = 'contact'; html = viewHome(); }
     else { route = ''; html = viewNotFound(); }
 
     main.innerHTML = `<div class="view">${html}</div>`;
+    tick();
     observeReveals();
     markPlaying();
     document.querySelectorAll('.nav a').forEach((a) => {
@@ -337,6 +583,8 @@
     if (data) {
       $('#brandName').textContent = data.site.name;
       document.querySelectorAll('[data-route="music"]').forEach((a) => { a.hidden = !albums().length; });
+      document.querySelectorAll('[data-route="news"]').forEach((a) => { a.hidden = !posts().length; });
+      document.querySelectorAll('[data-route="events"]').forEach((a) => { a.hidden = !events().length; });
     }
     updateThemeBtn();
     updatePlayerText();
@@ -376,6 +624,14 @@
     if (pa) { const a = list[+pa.dataset.playAlbum]; if (a) playList(albumRefs(a), 0, false); return; }
     const sa = e.target.closest('[data-shuffle-album]');
     if (sa) { const a = list[+sa.dataset.shuffleAlbum]; if (a) { const refs = albumRefs(a); playList(refs, Math.floor(Math.random() * refs.length), true); } return; }
+    const cp = e.target.closest('[data-copy]');
+    if (cp) {
+      // Lenken går til bokas egen side, som viser omslaget når den deles på Discord, Messenger osv.
+      e.preventDefault();
+      const url = new URL(cp.getAttribute('href'), location.href.split('#')[0]).href;
+      navigator.clipboard?.writeText(url).then(() => toast(t('copied')), () => { location.href = url; });
+      return;
+    }
     const tb = e.target.closest('.track[data-key]');
     if (tb) {
       if (now() && now().key === tb.dataset.key) { togglePlay(); return; }
@@ -389,6 +645,15 @@
     observeReveals();
     markPlaying();
   });
+
+  let toastTimer;
+  function toast(msg) {
+    const el = $('#toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+  }
 
   // ---------- Tema, språk og meny ----------
 
