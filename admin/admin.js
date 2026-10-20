@@ -1,7 +1,7 @@
 // Admin-panel for Ellie Cast sin forfatterside.
 // Samme fil brukes i begge versjonene av siden:
 //  - GitHub Pages: lagrer innhold og bilder direkte i repoet via GitHub sitt API.
-//  - PHP: lagrer i SQL-databasen via ../api/admin.php  (<body data-backend="php">)
+//  - PHP: lagrer i databasen på webhotellet via ../api/admin.php  (<body data-backend="php">)
 
 (() => {
   const BACKEND = document.body.dataset.backend === 'php' ? 'php' : 'github';
@@ -378,32 +378,26 @@
         const text = (p, body) => ({ path: repoPath(p), mode: '100644', type: 'blob', content: body });
         const entries = [text(DATA_PATH, JSON.stringify(content, null, 2) + '\n')];
 
-        // Discord, Messenger, Google osv. leser ikke JavaScript, så delingsinfo og strukturdata må stå rett i index.html.
+        // Delingsinfo, strukturdata og egne sider (uten #) for bøker, nyheter osv. Sider for innhold som er slettet eller skjult, fjernes.
         const SEO = window.EC_SEO;
-        const site = new URL('../', location.href).href;
         const index = blobs.get(repoPath('index.html'));
-        let template = null;
         if (index) {
+          let pages = null;
           try {
             const html = base64ToText((await api(`/git/blobs/${index.sha}`)).content);
-            let next = html.replace(/  <!-- deling:start[\s\S]*?<!-- deling:slutt -->/, () => shareMetaHTML(content));
-            if (SEO) next = next.replace(SEO.DATA_BLOCK, () => SEO.indexLd(content, site));
-            template = next;
-            if (next !== html) entries.push(text('index.html', next));
+            pages = siteFiles(content, html);
+            if (pages['index.html'] === html) delete pages['index.html'];
           } catch (err) {
-            console.warn('Klarte ikke å oppdatere delingsinfo i index.html', err);
+            console.warn('Klarte ikke å lage sidene', err);
           }
-        }
-
-        // Egne sider uten # (bøker, nyheter, arrangementer, musikk, om og kontakt) og sitemap.xml, så Google finner alt. Sider for innhold som er slettet eller skjult, fjernes.
-        if (SEO && template) {
-          const generated = SEO.files(content, site, template);
-          const keep = new Set(Object.keys(generated).map(repoPath));
-          for (const [p, body] of Object.entries(generated)) entries.push(text(p, body));
-          const prefix = gh.folder.replace(/^\/+|\/+$/g, '');
-          for (const [p, b] of blobs) {
-            const rel = prefix ? (p.startsWith(prefix + '/') ? p.slice(prefix.length + 1) : null) : p;
-            if (rel && SEO.MANAGED.test(rel) && !keep.has(p)) entries.push({ path: p, mode: b.mode, type: 'blob', sha: null });
+          if (pages) {
+            for (const [p, body] of Object.entries(pages)) entries.push(text(p, body));
+            const keep = new Set(Object.keys(pages).map(repoPath));
+            const prefix = gh.folder.replace(/^\/+|\/+$/g, '');
+            for (const [p, b] of blobs) {
+              const rel = prefix ? (p.startsWith(prefix + '/') ? p.slice(prefix.length + 1) : null) : p;
+              if (SEO && rel && SEO.MANAGED.test(rel) && !keep.has(p)) entries.push({ path: p, mode: b.mode, type: 'blob', sha: null });
+            }
           }
         }
 
@@ -457,6 +451,16 @@
       this.renderConnect();
     },
   };
+
+  // Discord, Messenger, Google osv. leser ikke JavaScript, så delingsinfo og strukturdata må stå rett i index.html,
+  // og hver bok, nyhet osv. får sin egen side. Brukes av begge versjonene. `html` er index.html slik den er nå.
+  function siteFiles(content, html) {
+    const SEO = window.EC_SEO;
+    const site = new URL('../', location.href).href;
+    let index = html.replace(/  <!-- deling:start[\s\S]*?<!-- deling:slutt -->/, () => shareMetaHTML(content));
+    if (SEO) index = index.replace(SEO.DATA_BLOCK, () => SEO.indexLd(content, site));
+    return { 'index.html': index, ...(SEO ? SEO.files(content, site, index) : {}) };
+  }
 
   function shareMetaHTML(content) {
     const siteUrl = new URL('../', location.href).href;
@@ -555,14 +559,31 @@
 
     async load() {
       const r = await this.call('data');
-      ready(r.data);
+      // Første gang på et nytt domene: sidene og sitemap.xml har fortsatt den gamle adressen til de publiseres her.
+      let stale = false;
+      try {
+        const res = await fetch(`../sitemap.xml?v=${Date.now()}`, { cache: 'no-store' });
+        const site = new URL('../', location.href).href;
+        const index = await fetch(`../index.html?v=${Date.now()}`, { cache: 'no-store' });
+        stale = !res.ok || !(await res.text()).includes(`<loc>${site}</loc>`)
+          || !index.ok || !(await index.text()).includes(`<meta property="og:url" content="${esc(site)}">`);
+      } catch (e) {}
+      ready(r.data, stale);
+      if (stale) toast('Trykk «Publiser» én gang, så får alle sidene og Google riktig adresse.');
       // Holder økten i live mens admin er åpent, og henter ny CSRF-nøkkel hvis du har logget inn i en annen fane.
       clearInterval(this.ping);
       this.ping = setInterval(() => this.call('session').then((s) => { if (s.csrf) this.csrf = s.csrf; }).catch(() => {}), 5 * 60 * 1000);
     },
 
     async save(content, files = { moves: [], deletes: [] }) {
-      await this.call('save', { body: { data: content, files } });
+      let pages = {};
+      try {
+        const res = await fetch(`../index.html?v=${Date.now()}`, { cache: 'no-store' });
+        if (res.ok) pages = siteFiles(content, await res.text());
+      } catch (err) {
+        console.warn('Klarte ikke å lage sidene', err);
+      }
+      await this.call('save', { body: { data: content, files, pages } });
     },
 
     async upload(blob, base, ext, kind = 'image', folder = '') {
