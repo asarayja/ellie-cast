@@ -370,8 +370,6 @@ a.tile:hover { transform: translateY(-4px); }
 .nl-form input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); font: inherit; padding: 10px 16px; outline: none; }
 .nl-form:focus-within { border-color: var(--accent); }
 .newsletter .nl-note { margin-top: 12px; font-size: .85rem; }
-.nl-bonus { margin-top: 22px; }
-.nl-bonus h3 { font-size: 1.5rem; margin: 12px 0 4px; }
 .section-head .muted { font-size: .9rem; }
 .nl-note a { color: var(--accent); }
 @media (max-width: 760px) {

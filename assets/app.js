@@ -5,7 +5,7 @@
     en: {
       nav_books: 'Books', nav_music: 'Music', nav_about: 'About Ellie', nav_contact: 'Contact',
       books: 'The books', all_books: 'All books', see_books: 'See the books', about_me: 'About Ellie', read_more: 'Read more',
-      latest: 'Latest book', read_about: 'About the book', upcoming: 'Coming', coming: 'Coming soon', pages: 'Pages', year: 'Published', genre: 'Genre', series: 'Series', reading_order: 'Reading order', book_no: 'Book', other_books: 'Other books', nl_gift: 'Free when you sign up',
+      latest: 'Latest book', read_about: 'About the book', upcoming: 'Coming', coming: 'Coming soon', pages: 'Pages', year: 'Published', genre: 'Genre', series: 'Series', reading_order: 'Reading order', book_no: 'Book', other_books: 'Other books',
       excerpt: 'Excerpt', back: '← All books', more_books: 'More books', contact: 'Contact', say_hi: 'Say hello', write: 'Send an email',
       music: 'Music', music_lead: 'Listen while you read. The music keeps playing as you move around the site.', listen: 'Listen now',
       all_music: '← All music', play: 'Play', pause: 'Pause', shuffle_play: 'Shuffle', song: 'song', songs: 'songs', minutes: 'min',
@@ -395,12 +395,6 @@
           <span class="pill">${t('nl_pill')}</span>
           <h2>${esc(tr(n.title) || t('nl_title'))}</h2>
           <p>${esc(tr(n.text) || t('nl_text'))}</p>
-          ${tr(n.bonus?.title) ? `
-          <div class="nl-bonus">
-            <span class="pill accent">🎁 ${t('nl_gift')}</span>
-            <h3>${esc(tr(n.bonus.title))}</h3>
-            ${tr(n.bonus.text) ? `<p>${esc(tr(n.bonus.text))}</p>` : ''}
-          </div>` : ''}
         </div>
         <div>
           ${action}

@@ -148,7 +148,6 @@
     d.newsletter = { provider: '', buttondown: '', url: '', ...d.newsletter };
     d.newsletter.title = i18n(d.newsletter.title);
     d.newsletter.text = i18n(d.newsletter.text);
-    d.newsletter.bonus = { title: i18n(d.newsletter.bonus?.title), text: i18n(d.newsletter.bonus?.text) };
     d.music = d.music || {};
     d.music.albums = (d.music.albums || []).map((a) => ({
       id: '', artist: '', year: '', cover: '', ...a,
@@ -950,14 +949,6 @@
           <p class="small muted">Tomt = standardteksten («Be the first to know» …).</p>
           ${langField('Overskrift', 'newsletter.title')}
           ${langField('Tekst', 'newsletter.text', true)}
-        </div>
-        <div class="card">
-          <h3 style="margin-top:0">🎁 Gave ved påmelding (valgfritt)</h3>
-          <p class="small muted">F.eks. et bonuskapittel, en slettet scene eller en kort historie fra bokas verden. Her skriver du bare hva leserne får –
-            den vises i påmeldingsboksen. Selve gaven legger du i velkomst-e-posten inne på ${n.provider === 'buttondown' ? 'Buttondown (Settings → Emails)' : 'nyhetsbrev-tjenesten'},
-            så bare de som melder seg på får den. Ikke legg manus eller filer med gaven på siden.</p>
-          ${langField('Hva får de?', 'newsletter.bonus.title')}
-          ${langField('Kort beskrivelse', 'newsletter.bonus.text', true)}
         </div>` : ''}
         <div class="card">
           <h3 style="margin-top:0">Personvern</h3>
