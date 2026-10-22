@@ -490,6 +490,8 @@
     publishedMsg: 'Lagret! Endringene er ute på siden nå ♥',
     csrf: '',
     username: '',
+    role: 'admin', // 'admin' eller 'editor' (redaktør). Serveren sjekker rollen selv, dette styrer bare hva som vises.
+    users: null, // brukerne (bare admin, null = ikke hentet ennå)
     messages: null, // meldinger fra kontaktskjemaet (null = ikke hentet ennå)
     unread: 0,
 
@@ -534,6 +536,7 @@
         if (!s.installed) return this.renderLogin('Siden er ikke installert ennå. Åpne install.php først.');
         if (!s.loggedIn) return this.renderLogin();
         this.username = s.username;
+        this.role = s.role || 'admin';
         await this.load();
       } catch (err) {
         this.renderLogin(friendlyError(err));
@@ -562,6 +565,7 @@
           const r = await this.call('login', { body: { username: $('#username').value.trim(), password: $('#password').value } });
           this.csrf = r.csrf;
           this.username = r.username;
+          this.role = r.role || 'admin';
           await this.load();
         } catch (err) {
           this.renderLogin(friendlyError(err));
@@ -612,7 +616,7 @@
     settingsHTML() {
       return `
         <div class="card">
-          <p>Logget inn som <b>${esc(this.username)}</b>. Innholdet lagres i databasen på serveren.</p>
+          <p>Logget inn som <b>${esc(this.username)}</b> (${this.role === 'editor' ? 'redaktør' : 'admin'}). Innholdet lagres i databasen på serveren.</p>
           <button class="danger" data-act="disconnect">Logg ut</button>
         </div>
         <div class="card">
@@ -740,6 +744,7 @@
       ${data.music.albums.map((a, i) => item(`album:${i}`, `♪ ${esc(a.title.en || 'Uten navn')} <span class="muted small">(${a.tracks.length})</span>`)).join('')}
       <button data-view="new-album" class="add">＋ Nytt album</button>
       <div class="group">Annet</div>
+      ${BACKEND === 'php' && phpBackend.role === 'admin' ? item('users', '👥 Brukere') : ''}
       ${item('settings', '⚙️ Innstillinger')}`;
   }
 
@@ -1008,10 +1013,104 @@
     } else if (view === 'messages') {
       phpBackend.messages = null;
       renderMessages();
+    } else if (view === 'users') {
+      phpBackend.users = null;
+      renderUsers();
     } else if (view === 'settings') {
       ed.innerHTML = `<h2>Innstillinger</h2>${backend.settingsHTML()}`;
       backend.afterSettings?.();
     }
+  }
+
+  // Brukere og roller (bare på webhotellet, bare for admin)
+  function renderUsers() {
+    const ed = $('#editor');
+    const list = phpBackend.users;
+    const pwFields = (a, b) => `
+          <div class="grid2">
+            <div class="field"><label for="${a}">Passord (minst 10 tegn)</label><input type="password" id="${a}" required minlength="10" autocomplete="new-password"></div>
+            <div class="field"><label for="${b}">Gjenta passordet</label><input type="password" id="${b}" required minlength="10" autocomplete="new-password"></div>
+          </div>`;
+    const roleSelect = (attrs, value) => `<select ${attrs}>
+            <option value="editor" ${value === 'editor' ? 'selected' : ''}>Redaktør</option>
+            <option value="admin" ${value === 'admin' ? 'selected' : ''}>Admin</option></select>`;
+    ed.innerHTML = `
+      <h2>Brukere</h2>
+      <div class="card">
+        <p class="small muted" style="margin:0"><b>Admin</b> kan alt, også legge til og fjerne brukere.
+          <b>Redaktør</b> kan redigere og publisere alt innhold og lese meldinger, men ser ikke denne siden.<br>
+          Passordene lagres kryptert, som en kode som ikke kan gjøres om til passordet igjen. Ingen kan se dem, heller ikke admin.
+          Glemmer noen passordet, lager du et nytt her.</p>
+      </div>
+      ${list === null ? '<p class="muted">Laster …</p>' : list.map((u) => {
+        const me = u.username === phpBackend.username;
+        return `
+        <div class="card" data-uid="${u.id}">
+          <div class="row" style="justify-content:space-between">
+            <div><b>${esc(u.username)}</b>${me ? ' <span class="muted small">(deg)</span>' : ''}</div>
+            <div class="row">
+              ${me ? `<span class="small muted">${u.role === 'editor' ? 'Redaktør' : 'Admin'}</span>`
+                : roleSelect('data-user="role" aria-label="Rolle" style="width:auto"', u.role)}
+              <button data-user="pw">Nytt passord</button>
+              ${me ? '' : '<button class="danger" data-user="delete">Slett</button>'}
+            </div>
+          </div>
+          <form class="user-pw" hidden style="margin-top:14px">
+            ${pwFields(`pwA${u.id}`, `pwB${u.id}`)}
+            <button class="primary" type="submit">Lagre passordet</button>
+          </form>
+        </div>`;
+      }).join('')}
+      <div class="card">
+        <h3 style="margin-top:0">Ny bruker</h3>
+        <form id="newUser">
+          <div class="grid2">
+            <div class="field"><label for="nuName">Brukernavn</label><input type="text" id="nuName" required minlength="3" maxlength="60" autocomplete="off"></div>
+            <div class="field"><label for="nuRole">Rolle</label>${roleSelect('id="nuRole"', 'editor')}</div>
+          </div>
+          ${pwFields('nuPw', 'nuPw2')}
+          <button class="primary" type="submit">Legg til bruker</button>
+          <p class="small muted">Gi brukernavnet og passordet til personen. Passordet kan de bytte selv under Innstillinger.</p>
+        </form>
+      </div>`;
+    const call = async (body, done) => {
+      try {
+        const r = await phpBackend.call('user', { body });
+        phpBackend.users = r.users;
+        renderUsers();
+        toast(done);
+      } catch (err) {
+        toast(friendlyError(err), true);
+        if (body.id && 'role' in body) renderUsers(); // sett rollevalget tilbake
+      }
+    };
+    if (list === null) {
+      phpBackend.call('users')
+        .then((r) => { phpBackend.users = r.users; if (view === 'users') renderUsers(); })
+        .catch((err) => toast(friendlyError(err), true));
+      return;
+    }
+    ed.querySelectorAll('[data-uid]').forEach((card) => {
+      const id = +card.dataset.uid;
+      const u = list.find((x) => x.id === id);
+      const sel = card.querySelector('[data-user="role"]');
+      if (sel) sel.onchange = () => call({ id, role: sel.value }, `${u.username} er nå ${sel.value === 'editor' ? 'redaktør' : 'admin'}.`);
+      card.querySelector('[data-user="pw"]').onclick = () => { const f = card.querySelector('.user-pw'); f.hidden = !f.hidden; if (!f.hidden) f.querySelector('input').focus(); };
+      const del = card.querySelector('[data-user="delete"]');
+      if (del) del.onclick = () => { if (confirm(`Slette brukeren «${u.username}»? Hen kan ikke logge inn lenger.`)) call({ id, delete: true }, `${u.username} er slettet.`); };
+      card.querySelector('.user-pw').onsubmit = (e) => {
+        e.preventDefault();
+        const [a, b] = e.target.querySelectorAll('input');
+        if (a.value !== b.value) return toast('Passordene er ikke like.', true);
+        call({ id, password: a.value }, `Nytt passord til ${u.username} er lagret.`);
+      };
+    });
+    $('#newUser').onsubmit = (e) => {
+      e.preventDefault();
+      if ($('#nuPw').value !== $('#nuPw2').value) return toast('Passordene er ikke like.', true);
+      const username = $('#nuName').value.trim();
+      call({ username, role: $('#nuRole').value, password: $('#nuPw').value }, `${username} er lagt til.`);
+    };
   }
 
   // Meldinger fra kontaktskjemaet (bare på webhotellet)
