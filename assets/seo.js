@@ -165,6 +165,7 @@
       ...(events(c).length ? [`${site}events/`] : []),
       ...(albums(c).length ? [`${site}music/`] : []),
       ...albums(c).map((a) => `${site}music/${a.id}/`),
+      `${site}board-game/`,
       `${site}about/`,
       `${site}contact/`,
     ];
@@ -529,6 +530,75 @@
     });
   }
 
+  // ---------- Brettspillet ----------
+  // Fast innhold (ikke fra admin). Filene ligger i board-game/ i repoet.
+
+  const GAME_FILES = [
+    ['stay-awake-board-a3.pdf', 'The board · A3', '1 page. One sheet, ready to play.'],
+    ['stay-awake-board-a4.pdf', 'The board · 2 × A4', '2 pages. Tape the two halves together from behind.'],
+    ['stay-awake-cards.pdf', 'The cards', '14 pages: 54 Fall cards and 8 role cards. Print double-sided, flipping on the long edge.'],
+    ['stay-awake-pieces.pdf', 'Figures and candle cards', '1 page: 8 figures to fold, 8 candle cards and 2 Sedation tokens.'],
+    ['stay-awake-rules.pdf', 'The rules', '3 pages, with a list of every card.'],
+    ['stay-awake-everything-a4.pdf', 'Everything in one file', '20 A4 pages: the board, cards, pieces and rules.'],
+  ];
+  const GAME_STEPS = [
+    ['A secret role', 'Everyone gets a role card face down. One card only says The Collector. Everyone else is a Captive.'],
+    ['Roll through the house', 'Like snakes and ladders: crawl through the vents to get ahead, and slide back if you doze off.'],
+    ['Two-sided cards', 'Every card has a text for Captives and a darker one only the Collector may use. You say what you do, never what the card says.'],
+    ['Night and talk', 'At night, all eyes close and everyone taps the table while the Collector sedates someone. Then you talk, accuse and vote.'],
+  ];
+
+  function gamePage(c, site, tpl) {
+    const book = visibleBooks(c).find((b) => b.id === 'the-fragmented-collector');
+    const bookLink = book ? `<a href="${bookPath(book)}">${esc(tr(book.title))}</a>` : 'The Fragmented Collector';
+    const desc = 'Stay Awake: a free print-and-play board game for 4–8 players, set in the world of The Fragmented Collector. One of you isn\'t a captive.';
+    return page(c, site, tpl, {
+      path: 'board-game/',
+      title: `Stay Awake · Board game · ${c.site.name}`,
+      desc,
+      image: `${site}board-game/board.jpg`,
+      ld: [{ '@type': 'Game', name: 'Stay Awake', url: `${site}board-game/`, description: desc, numberOfPlayers: { '@type': 'QuantitativeValue', minValue: 4, maxValue: 8 }, author: { '@id': `${site}#author` }, isAccessibleForFree: true }],
+      body: `
+      <section class="game">
+        <div class="page-head">
+          <span class="pill">Board game</span>
+          <h1>Stay Awake</h1>
+          <p class="lead">A print-and-play board game set in the world of ${bookLink}. One of you isn't a captive. Roll through the house that doesn't breathe, crawl through the vents, and find the Collector before you are collected.</p>
+          <dl class="facts">
+            <div><dt>Players</dt><dd>4–8</dd></div>
+            <div><dt>Time</dt><dd>30–45 min</dd></div>
+            <div><dt>Ages</dt><dd>14+</dd></div>
+            <div><dt>Price</dt><dd>Free</dd></div>
+          </dl>
+          <div class="actions"><a class="btn" href="board-game/#download">Download the game</a><a class="btn ghost" href="board-game/stay-awake-rules.pdf" download>Read the rules</a></div>
+        </div>
+        <figure class="game-board glass"><img src="board-game/board.webp" width="1700" height="1189" alt="The Stay Awake board: 40 spaces through five rooms of the house, from the bedroom to the front door"></figure>
+        <div class="game-steps">
+          ${GAME_STEPS.map(([h, p], i) => `<div class="glass"><span class="game-no">${i + 1}</span><h2>${esc(h)}</h2><p>${esc(p)}</p></div>`).join('')}
+        </div>
+        <div class="game-pieces">
+          <img src="board-game/cards.webp" width="900" height="550" alt="Three cards: a Captive role card, the Fall card Three taps, and the Collector role card">
+          <div>
+            <h2>Two texts, one card</h2>
+            <p>The white half is for Captives. The dark half is only for the Collector, who may also use the white half to blend in. Every text grows out of the book and the song COLLECT HER.</p>
+            <img src="board-game/figures.webp" width="854" height="193" alt="The eight figures, one in each colour">
+          </div>
+        </div>
+        <div class="game-dl" id="download">
+          <div class="section-head"><h2>Download</h2></div>
+          <ul>
+            ${GAME_FILES.map(([f, h, p]) => `<li class="glass"><div><h3>${esc(h)}</h3><p>${esc(p)}</p></div><a class="btn small" href="board-game/${f}" download>Download PDF</a></li>`).join('')}
+          </ul>
+          <div class="prose game-print">
+            <p><strong>Print at 100% (actual size)</strong>, not “fit to page”, or the cards come out too small. Thick paper works best for the board and the figures.</p>
+            <p>You also need 1 die, scissors and glue or tape, 8 paper clips and a phone as a 1-minute timer.</p>
+            <p>The game has dark themes from the book, like control and sedation. Nobody is hurt on the table: being “collected” just means you're out of the game.</p>
+          </div>
+        </div>
+      </section>`,
+    });
+  }
+
   // GitHub viser 404.html for adresser som ikke finnes. Den vet ikke hvor dypt den står, så <base> må være fast.
   function notFoundPage(c, site, tpl) {
     return page(c, site, tpl, {
@@ -559,6 +629,7 @@
       out['music/index.html'] = musicPage(c, site, template);
       for (const a of albums(c)) out[`music/${a.id}/index.html`] = albumPage(c, a, site, template);
     }
+    out['board-game/index.html'] = gamePage(c, site, template);
     out['about/index.html'] = aboutPage(c, site, template);
     out['contact/index.html'] = contactPage(c, site, template);
     out['privacy/index.html'] = privacyPage(c, site, template);
@@ -566,7 +637,7 @@
   }
 
   // Sidene admin har ansvar for. Ligger det en slik side i repoet som ikke lages lenger, slettes den.
-  const MANAGED = /^((books|news|music)\/([a-z0-9-]+\/)?index\.html|(events|about|contact|privacy)\/index\.html)$/;
+  const MANAGED = /^((books|news|music)\/([a-z0-9-]+\/)?index\.html|(events|about|contact|privacy|board-game)\/index\.html)$/;
 
   const SEO = { files, indexLd, MANAGED, DATA_BLOCK };
   if (typeof module === 'object' && module.exports) module.exports = SEO;

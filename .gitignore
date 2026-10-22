@@ -1,5 +1,7 @@
 # Private filer som aldri skal på nettsiden
 *.pdf
+# …bortsett fra brettspillet, som folk skal kunne laste ned
+!board-game/*.pdf
 privat/
 
 # PHP-versjonen til eget webhotell (lastes opp der, ikke til GitHub)

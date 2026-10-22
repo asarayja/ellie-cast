@@ -3,7 +3,7 @@
 (() => {
   const UI = {
     en: {
-      nav_books: 'Books', nav_music: 'Music', nav_about: 'About Ellie', nav_contact: 'Contact',
+      nav_books: 'Books', nav_music: 'Music', nav_game: 'Board Game', nav_about: 'About Ellie', nav_contact: 'Contact',
       books: 'The books', all_books: 'All books', see_books: 'See the books', about_me: 'About Ellie', read_more: 'Read more',
       latest: 'Latest book', read_about: 'About the book', upcoming: 'Coming', coming: 'Coming soon', pages: 'Pages', year: 'Published', genre: 'Genre', series: 'Series', reading_order: 'Reading order', book_no: 'Book', other_books: 'Other books',
       excerpt: 'Excerpt', back: '← All books', more_books: 'More books', contact: 'Contact', say_hi: 'Say hello', write: 'Send an email',
@@ -612,6 +612,8 @@
   // Hver adresse finnes også som egen fil, så de virker når de deles og når man laster siden på nytt.
   const ROOT = new URL(document.baseURI);
   const pathParts = () => decodeURI(location.pathname).slice(decodeURI(ROOT.pathname).length).replace(/index\.html$/, '').split('/').filter(Boolean);
+  // Brettspill-siden er ferdig HTML fra seo.js (board-game/index.html). Den tas vare på og vises som den er.
+  const gameHTML = pathParts()[0] === 'board-game' ? (main.querySelector('.view')?.innerHTML || '') : '';
 
   // Gamle lenker med # (f.eks. …/#/book/x) sendes til den nye adressen.
   if (/^#\/./.test(location.hash)) {
@@ -650,6 +652,10 @@
     else if (parts[0] === 'privacy') { route = ''; html = viewPrivacy(); title = t('privacy'); }
     else if (parts[0] === 'about') { route = 'about'; html = viewAbout(); title = t('about_me'); }
     else if (parts[0] === 'contact') { route = 'contact'; html = contactHTML(); title = t('contact'); }
+    else if (parts[0] === 'board-game') {
+      if (!gameHTML) { location.reload(); return; }
+      route = 'game'; html = gameHTML; title = 'Stay Awake';
+    }
     else { route = ''; html = viewNotFound(); }
 
     main.innerHTML = `<div class="view">${html}</div>`;
@@ -664,7 +670,10 @@
     document.title = title ? `${title} · ${data.site.name}` : `${data.site.name} · ${tr(data.site.role)}`;
 
     const path = parts.join('/');
-    if (path !== lastPath) window.scrollTo(0, 0);
+    if (path !== lastPath) {
+      const target = lastPath === null && location.hash ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
+      if (target) target.scrollIntoView(); else window.scrollTo(0, 0);
+    }
     lastPath = path;
   }
 
@@ -692,6 +701,7 @@
     const rel = u.pathname.slice(ROOT.pathname.length);
     if (/^admin(\/|$)/.test(rel) || /\.[a-z0-9]+$/i.test(rel.replace(/index\.html$/, ''))) return; // admin og filer (mp3, xml …)
     if (u.hash && u.pathname === location.pathname) return; // hopp på samme side, f.eks. «Skip to content»
+    if (/^board-game(\/|$)/.test(rel) && !gameHTML) return; // brettspill-siden lastes som vanlig side første gang
     e.preventDefault();
     if (u.href !== location.href) history.pushState(null, '', u.href);
     render();

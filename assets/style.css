@@ -514,3 +514,28 @@ body.has-player .footer-inner { padding-bottom: 130px; }
   .reveal { opacity: 1; transform: none; }
   html { scroll-behavior: auto; }
 }
+
+/* ---------- Brettspillet (board-game/) ---------- */
+.game-board { margin: 0 0 40px; padding: clamp(8px, 1.6vw, 16px); border-radius: 28px; }
+.game-board img { display: block; width: 100%; height: auto; border-radius: 16px; }
+.game-steps { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 56px; }
+.game-steps > div { padding: 24px; border-radius: 24px; }
+.game-steps h2 { font-size: 1.9rem; margin: 10px 0 6px; }
+.game-steps p { margin: 0; color: var(--muted); }
+.game-no { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.game-pieces { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: clamp(24px, 5vw, 60px); align-items: center; margin-bottom: 64px; }
+.game-pieces > img { width: 100%; height: auto; }
+.game-pieces h2 { font-size: clamp(2.2rem, 5vw, 3.2rem); margin: 0 0 10px; }
+.game-pieces p { color: var(--muted); margin: 0 0 22px; }
+.game-pieces div img { width: 100%; height: auto; }
+.game-dl { scroll-margin-top: 90px; }
+.game-dl ul { list-style: none; margin: 0 0 28px; padding: 0; display: grid; gap: 12px; }
+.game-dl li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; border-radius: 20px; }
+.game-dl h3 { font-size: 1.5rem; margin: 0 0 2px; }
+.game-dl li p { margin: 0; color: var(--muted); font-size: .95rem; }
+.game-dl li .btn { flex: none; }
+.game-print { max-width: 46em; }
+@media (max-width: 760px) {
+  .game-pieces { grid-template-columns: 1fr; }
+  .game-dl li { flex-direction: column; align-items: flex-start; }
+}

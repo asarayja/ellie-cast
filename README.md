@@ -18,7 +18,9 @@ All colours are at the top of `assets/style.css`, in the block marked **FARGER**
 
 ## Pages
 
-`books/`, `books/the-fragmented-collector/`, `news/`, `events/`, `music/`, `about/`, `contact/`, `privacy/`
+`books/`, `books/the-fragmented-collector/`, `news/`, `events/`, `music/`, `board-game/`, `about/`, `contact/`, `privacy/`
+
+`board-game/` is the free print-and-play board game *Stay Awake*. The PDFs and pictures in that folder are the downloads.
 
 Every address has its own `index.html`, so links work when shared and can be found by search engines.
 These files, `404.html` and `sitemap.xml` are generated automatically from `data/site.json`. Old links with `#/` still work.
