@@ -490,6 +490,18 @@
     publishedMsg: 'Lagret! Endringene er ute på siden nå ♥',
     csrf: '',
     username: '',
+    messages: null, // meldinger fra kontaktskjemaet (null = ikke hentet ennå)
+    unread: 0,
+
+    async loadMessages() {
+      const r = await this.call('messages');
+      this.setMessages(r.messages);
+    },
+
+    setMessages(list) {
+      this.messages = Array.isArray(list) ? list : [];
+      this.unread = this.messages.filter((m) => !m.read).length;
+    },
 
     async call(action, { body, form } = {}) {
       const res = await fetch(`../api/admin.php?action=${action}`, {
@@ -570,6 +582,7 @@
       } catch (e) {}
       ready(r.data, stale);
       if (stale) toast('Trykk «Publiser» én gang, så får alle sidene og Google riktig adresse.');
+      this.loadMessages().then(() => renderNav()).catch(() => {});
       // Holder økten i live mens admin er åpent, og henter ny CSRF-nøkkel hvis du har logget inn i en annen fane.
       clearInterval(this.ping);
       this.ping = setInterval(() => this.call('session').then((s) => { if (s.csrf) this.csrf = s.csrf; }).catch(() => {}), 5 * 60 * 1000);
@@ -712,6 +725,7 @@
       ${item('general', '🏠 Forside')}
       ${item('about', '✍️ Om Ellie')}
       ${item('contact', '✉️ Kontakt')}
+      ${BACKEND === 'php' ? item('messages', `📥 Meldinger${phpBackend.unread ? ` <span class="badge">${phpBackend.unread}</span>` : ''}`) : ''}
       ${item('newsletter', '📬 Nyhetsbrev')}
       <div class="group">Nyheter</div>
       ${data.news.map((n, i) => item(`post:${i}`, `📰 ${esc(n.title.en || 'Uten tittel')}`)).join('')}
@@ -937,9 +951,16 @@
         <h2>Kontakt</h2>
         <div class="card">
           ${textField('E-post', 'contact.email', 'inputmode="email" placeholder="navn@eksempel.no"')}
-          <p class="small muted">Tomt = knappen «Send en e-post» vises nedtonet.</p>
+          <p class="small muted">${BACKEND === 'php' ? 'Meldinger fra kontaktskjemaet sendes hit.' : 'Tomt = knappen «Send en e-post» vises nedtonet.'}</p>
           ${langField('Tekst', 'contact.text', true)}
         </div>
+        ${BACKEND === 'php' ? `
+        <div class="card">
+          <h3 style="margin-top:0">Kontaktskjema</h3>
+          <p class="small muted">Kontaktsiden har et skjema der man skriver navn, e-post og melding. For å sende må man skrive inn en kode
+            fra et bilde, så boter ikke kan sende meldinger. Meldingene kommer på e-post til adressen over, og ligger også under
+            <b>Meldinger</b>. E-postadressen vises ikke på siden, så den ikke havner hos spam-boter.</p>
+        </div>` : ''}
         <div class="card">
           <h3 style="margin-top:0">Sosiale medier og andre lenker</h3>
           ${linksEditor('contact.links', false)}
@@ -984,10 +1005,58 @@
       renderBook(+view.slice(5));
     } else if (view.startsWith('album:')) {
       renderAlbum(+view.slice(6));
+    } else if (view === 'messages') {
+      phpBackend.messages = null;
+      renderMessages();
     } else if (view === 'settings') {
       ed.innerHTML = `<h2>Innstillinger</h2>${backend.settingsHTML()}`;
       backend.afterSettings?.();
     }
+  }
+
+  // Meldinger fra kontaktskjemaet (bare på webhotellet)
+  function renderMessages() {
+    const ed = $('#editor');
+    const list = phpBackend.messages;
+    const when = (s) => new Date(s * 1000).toLocaleString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    ed.innerHTML = `
+      <h2>Meldinger</h2>
+      <p class="small muted">Meldinger fra kontaktskjemaet på siden. De kommer også på e-post til adressen under «Kontakt».
+        «Svar» åpner e-posten din med adressen ferdig utfylt.</p>
+      ${list === null ? '<p class="muted">Laster …</p>'
+        : !list.length ? '<div class="card"><p class="muted" style="margin:0">Ingen meldinger ennå.</p></div>'
+        : list.map((m) => `
+        <div class="card msg${m.read ? '' : ' unread'}" data-id="${m.id}">
+          <div class="row" style="justify-content:space-between">
+            <div><b>${esc(m.name)}</b> <span class="muted">${esc(m.email)}</span></div>
+            <span class="small muted">${when(m.at)}${m.emailed ? '' : ' · ikke sendt på e-post'}</span>
+          </div>
+          <p class="msg-text">${esc(m.message)}</p>
+          <div class="row">
+            <a class="btn" href="mailto:${esc(m.email)}?subject=${encodeURIComponent('Re: your message')}">Svar</a>
+            <button data-msg="read">${m.read ? 'Merk som ulest' : 'Merk som lest'}</button>
+            <button class="danger" data-msg="delete">Slett</button>
+          </div>
+        </div>`).join('')}`;
+    if (list === null) {
+      phpBackend.loadMessages()
+        .then(() => { if (view === 'messages') { renderNav(); renderMessages(); } })
+        .catch((err) => toast(friendlyError(err), true));
+      return;
+    }
+    ed.querySelectorAll('[data-msg]').forEach((b) => {
+      b.onclick = async () => {
+        const id = +b.closest('[data-id]').dataset.id;
+        const m = list.find((x) => x.id === id);
+        if (b.dataset.msg === 'delete' && !confirm(`Slette meldingen fra ${m?.name || 'denne personen'}?`)) return;
+        try {
+          const r = await phpBackend.call('message', { body: b.dataset.msg === 'delete' ? { id, delete: true } : { id, read: !m?.read } });
+          phpBackend.setMessages(r.messages);
+          renderNav();
+          renderMessages();
+        } catch (err) { toast(friendlyError(err), true); }
+      };
+    });
   }
 
   function renderBook(i) {

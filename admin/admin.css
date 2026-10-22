@@ -292,3 +292,8 @@ input[type=color] { width: 44px; height: 40px; padding: 2px; border: 1px solid v
 .ampm button.on { background: var(--purple); color: #fff; border-color: var(--purple); }
 .cal-year { margin-top: 12px; }
 .cal-year input { width: 110px; }
+
+/* Meldinger fra kontaktskjemaet (webhotellet) */
+.badge { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 4px; border-radius: 99px; background: var(--purple, #7851a9); color: #fff; font-size: .72rem; font-weight: 700; }
+.msg.unread { box-shadow: inset 4px 0 0 var(--purple, #7851a9); }
+.msg-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 12px 0 16px; }

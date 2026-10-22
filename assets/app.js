@@ -7,6 +7,10 @@
       books: 'The books', all_books: 'All books', see_books: 'See the books', about_me: 'About Ellie', read_more: 'Read more',
       latest: 'Latest book', read_about: 'About the book', upcoming: 'Coming', coming: 'Coming soon', pages: 'Pages', year: 'Published', genre: 'Genre', series: 'Series', reading_order: 'Reading order', book_no: 'Book', other_books: 'Other books',
       excerpt: 'Excerpt', back: '← All books', more_books: 'More books', contact: 'Contact', say_hi: 'Say hello', write: 'Send an email',
+      cf_write: 'Write a message', cf_name: 'Your name', cf_email: 'Your email', cf_message: 'Message', cf_code: 'Type the code', cf_code_alt: 'Security code', cf_new: 'New code',
+      cf_send: 'Send message', cf_sending: 'Sending …', cf_sent_title: 'Thank you!', cf_sent: 'Your message is on its way. Ellie will get back to you as soon as possible.',
+      cf_error: 'Something went wrong. Please try again.', cf_offline: 'Could not reach the server. Check your connection and try again.',
+      cf_missing_name: 'Please write your name.', cf_missing_email: 'Please write a valid email address.', cf_missing_message: 'Please write a message.', cf_missing_code: 'Please type the code from the picture.',
       music: 'Music', music_lead: 'Listen while you read. The music keeps playing as you move around the site.', listen: 'Listen now',
       all_music: '← All music', play: 'Play', pause: 'Pause', shuffle_play: 'Shuffle', song: 'song', songs: 'songs', minutes: 'min',
       prev: 'Previous', next: 'Next', shuffle: 'Shuffle', repeat_off: 'Repeat: off', repeat_all: 'Repeat: all', repeat_one: 'Repeat: this song',
@@ -405,13 +409,15 @@
 
   function viewPrivacy() {
     const n = newsletter();
+    const form = contactForm();
     const email = /^[^\s@]+@[^\s@]+$/.test(data.contact?.email || '') ? data.contact.email : '';
     const parts = [
-      'This website does not use cookies, ads or tracking.',
+      form ? 'This website does not use ads or tracking. The contact form sets one small cookie so the security code works. It is deleted when you close the browser.' : 'This website does not use cookies, ads or tracking.',
       'Your browser remembers a few small settings, like light or dark theme and the music volume. They are stored only on your own device and are never sent anywhere.',
       n ? `If you sign up for the newsletter, your email address is stored by ${n.service || 'the newsletter service'} and used only to send news about the books. Every email has a link to unsubscribe, and you can ask to have your address deleted at any time.` : '',
-      'The fonts are loaded from Google Fonts, and the site is hosted on GitHub Pages. Like most websites, they can see your IP address when the page loads.',
-      email ? `Questions? Send an email to ${email}.` : '',
+      form ? 'If you send a message through the contact form, your name, email address and message are stored on this website\'s server and sent to Ellie by email. They are only used to answer you, and you can ask to have them deleted at any time.' : '',
+      form ? 'The fonts are loaded from Google Fonts. Like most websites, the web host and Google can see your IP address when the page loads.' : 'The fonts are loaded from Google Fonts, and the site is hosted on GitHub Pages. Like most websites, they can see your IP address when the page loads.',
+      form ? 'Questions? Use the contact form.' : email ? `Questions? Send an email to ${email}.` : '',
     ].filter(Boolean);
     return `
       <div class="page-head reveal"><span class="pill">${esc(data.site.name)}</span><h1>${t('privacy')}</h1></div>
@@ -517,21 +523,88 @@
       ${contactHTML()}`;
   }
 
-  function contactHTML() {
+  // ---------- Kontakt ----------
+  // På webhotellet (PHP-versjonen) har siden et kontaktskjema med kode fra et bilde (api/captcha.php → api/contact.php).
+  // Da vises ikke e-postadressen på siden. På GitHub Pages er det bare e-postknappen.
+
+  const contactForm = () => data.contact?.form === 'server';
+
+  function contactFormHTML() {
+    return `
+        <form class="contact-form" id="message" novalidate>
+          <div class="cf-row">
+            <label class="cf-field"><span>${t('cf_name')}</span><input name="name" required maxlength="100" autocomplete="name"></label>
+            <label class="cf-field"><span>${t('cf_email')}</span><input type="email" name="email" required maxlength="200" autocomplete="email"></label>
+          </div>
+          <label class="cf-field"><span>${t('cf_message')}</span><textarea name="message" required maxlength="5000" rows="6"></textarea></label>
+          <div class="cf-hp" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off"></label></div>
+          <div class="cf-captcha">
+            <img class="cf-img" src="api/captcha.php?r=${Date.now()}" alt="${t('cf_code_alt')}" width="220" height="72">
+            <button type="button" class="cf-new" data-new-code aria-label="${t('cf_new')}" title="${t('cf_new')}">↻</button>
+            <label class="cf-field cf-code"><span>${t('cf_code')}</span><input name="code" required maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+          </div>
+          <div class="cf-foot">
+            <button class="btn" type="submit">${t('cf_send')}</button>
+            <p class="cf-status" role="status" aria-live="polite"></p>
+          </div>
+        </form>`;
+  }
+
+  function contactHTML(withForm = false) {
     const c = data.contact || {};
     const links = (c.links || []).filter((l) => safeUrl(l.url));
     const email = /^[^\s@]+@[^\s@]+$/.test(c.email || '') ? c.email : '';
+    const form = contactForm();
+    const primary = form
+      ? (withForm ? '' : `<a class="btn" href="contact/#message">${t('cf_write')}</a>`)
+      : email ? `<a class="btn" href="mailto:${esc(email)}">${t('write')}</a>` : `<span class="btn disabled" aria-disabled="true">${t('write')}</span>`;
     return `
       <section class="contact glass reveal" id="contact">
         <span class="pill">${t('contact')}</span>
         <h2>${t('say_hi')}</h2>
         <p>${esc(tr(c.text))}</p>
+        ${form && withForm ? contactFormHTML() : ''}
         <div class="actions center">
-          ${email ? `<a class="btn" href="mailto:${esc(email)}">${t('write')}</a>` : `<span class="btn disabled" aria-disabled="true">${t('write')}</span>`}
+          ${primary}
           ${links.map((l) => `<a class="btn ghost" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('')}
         </div>
       </section>`;
   }
+
+  function newCode(form, focus) {
+    form.querySelector('.cf-img').src = `api/captcha.php?r=${Date.now()}`;
+    form.elements.code.value = '';
+    if (focus) form.elements.code.focus();
+  }
+
+  main.addEventListener('submit', async (e) => {
+    const form = e.target.closest('.contact-form');
+    if (!form) return;
+    e.preventDefault();
+    const status = form.querySelector('.cf-status');
+    const btn = form.querySelector('button[type="submit"]');
+    const say = (msg, bad) => { status.textContent = msg; status.classList.toggle('bad', !!bad); };
+    for (const name of ['name', 'email', 'message', 'code']) {
+      const el = form.elements[name];
+      if (!el.value.trim() || !el.checkValidity()) { say(t(`cf_missing_${name}`), true); el.focus(); return; }
+    }
+    btn.disabled = true;
+    say(t('cf_sending'));
+    try {
+      const res = await fetch('api/contact.php', { method: 'POST', body: new FormData(form), credentials: 'same-origin' });
+      const j = await res.json().catch(() => null);
+      if (res.ok && j?.ok) {
+        form.outerHTML = `<div class="cf-done" role="status"><h3>${t('cf_sent_title')}</h3><p>${t('cf_sent')}</p></div>`;
+        return;
+      }
+      say(j?.error || t('cf_error'), true);
+      if (j?.newCode) newCode(form);
+      if (j?.field && form.elements[j.field]) form.elements[j.field].focus();
+    } catch (err) {
+      say(t('cf_offline'), true);
+    }
+    btn.disabled = false;
+  });
 
   function albumCard(a) {
     const ai = albums().indexOf(a);
@@ -651,7 +724,7 @@
     else if (parts[0] === 'events') { route = 'events'; html = viewEvents(); title = t('events'); }
     else if (parts[0] === 'privacy') { route = ''; html = viewPrivacy(); title = t('privacy'); }
     else if (parts[0] === 'about') { route = 'about'; html = viewAbout(); title = t('about_me'); }
-    else if (parts[0] === 'contact') { route = 'contact'; html = contactHTML(); title = t('contact'); }
+    else if (parts[0] === 'contact') { route = 'contact'; html = contactHTML(true); title = t('contact'); }
     else if (parts[0] === 'board-game') {
       if (!gameHTML) { location.reload(); return; }
       route = 'game'; html = gameHTML; title = 'Stay Awake';
@@ -670,10 +743,8 @@
     document.title = title ? `${title} · ${data.site.name}` : `${data.site.name} · ${tr(data.site.role)}`;
 
     const path = parts.join('/');
-    if (path !== lastPath) {
-      const target = lastPath === null && location.hash ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
-      if (target) target.scrollIntoView(); else window.scrollTo(0, 0);
-    }
+    const target = location.hash ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
+    if (target) target.scrollIntoView(); else if (path !== lastPath) window.scrollTo(0, 0);
     lastPath = path;
   }
 
@@ -739,6 +810,7 @@
     const list = albums();
     const pa = e.target.closest('[data-play-album]');
     if (pa) { const a = list[+pa.dataset.playAlbum]; if (a) playList(albumRefs(a), 0, false); return; }
+    if (e.target.closest('[data-new-code]')) { newCode(e.target.closest('form'), true); return; }
     const sa = e.target.closest('[data-shuffle-album]');
     if (sa) { const a = list[+sa.dataset.shuffleAlbum]; if (a) { const refs = albumRefs(a); playList(refs, Math.floor(Math.random() * refs.length), true); } return; }
     const cp = e.target.closest('[data-copy]');

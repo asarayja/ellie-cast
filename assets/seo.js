@@ -483,15 +483,39 @@
     });
   }
 
+  // På webhotellet: kontaktskjema i stedet for e-postadressen (samme som app.js). Bildet med koden
+  // settes inn av app.js når siden lastes, så det bare lages én kode.
+  const contactForm = (c) => c.contact?.form === 'server';
+  const contactFormHTML = () => `
+        <form class="contact-form" id="message" novalidate>
+          <div class="cf-row">
+            <label class="cf-field"><span>Your name</span><input name="name" required maxlength="100" autocomplete="name"></label>
+            <label class="cf-field"><span>Your email</span><input type="email" name="email" required maxlength="200" autocomplete="email"></label>
+          </div>
+          <label class="cf-field"><span>Message</span><textarea name="message" required maxlength="5000" rows="6"></textarea></label>
+          <div class="cf-hp" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off"></label></div>
+          <div class="cf-captcha">
+            <img class="cf-img" alt="Security code" width="220" height="72">
+            <button type="button" class="cf-new" data-new-code aria-label="New code" title="New code">↻</button>
+            <label class="cf-field cf-code"><span>Type the code</span><input name="code" required maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+          </div>
+          <div class="cf-foot">
+            <button class="btn" type="submit">Send message</button>
+            <p class="cf-status" role="status" aria-live="polite"></p>
+          </div>
+        </form>`;
+
   function contactSection(c) {
     const k = c.contact || {};
-    const email = /^[^\s@]+@[^\s@]+$/.test(k.email || '') ? k.email : '';
+    const form = contactForm(c);
+    const email = !form && /^[^\s@]+@[^\s@]+$/.test(k.email || '') ? k.email : '';
     const links = (k.links || []).filter((l) => safeUrl(l.url));
     return `
       <section class="contact glass" id="contact">
         <span class="pill">Contact</span>
         <h2>Say hello</h2>
         <p>${esc(tr(k.text))}</p>
+        ${form ? contactFormHTML() : ''}
         <div class="actions center">
           ${email ? `<a class="btn" href="mailto:${esc(email)}">Send an email</a>` : ''}
           ${links.map((l) => `<a class="btn ghost" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('')}
@@ -511,13 +535,15 @@
 
   function privacyPage(c, site, tpl) {
     const n = c.newsletter || {};
+    const form = contactForm(c);
     const email = /^[^\s@]+@[^\s@]+$/.test(c.contact?.email || '') ? c.contact.email : '';
     const parts = [
-      'This website does not use cookies, ads or tracking.',
+      form ? 'This website does not use ads or tracking. The contact form sets one small cookie so the security code works. It is deleted when you close the browser.' : 'This website does not use cookies, ads or tracking.',
       'Your browser remembers a few small settings, like light or dark theme and the music volume. They are stored only on your own device and are never sent anywhere.',
       newsletterOn(c) ? `If you sign up for the newsletter, your email address is stored by ${n.provider === 'buttondown' ? 'Buttondown' : 'the newsletter service'} and used only to send news about the books. Every email has a link to unsubscribe, and you can ask to have your address deleted at any time.` : '',
-      'The fonts are loaded from Google Fonts, and the site is hosted on GitHub Pages. Like most websites, they can see your IP address when the page loads.',
-      email ? `Questions? Send an email to ${email}.` : '',
+      form ? 'If you send a message through the contact form, your name, email address and message are stored on this website\'s server and sent to Ellie by email. They are only used to answer you, and you can ask to have them deleted at any time.' : '',
+      form ? 'The fonts are loaded from Google Fonts. Like most websites, the web host and Google can see your IP address when the page loads.' : 'The fonts are loaded from Google Fonts, and the site is hosted on GitHub Pages. Like most websites, they can see your IP address when the page loads.',
+      form ? 'Questions? Use the contact form.' : email ? `Questions? Send an email to ${email}.` : '',
     ].filter(Boolean);
     return page(c, site, tpl, {
       path: 'privacy/',

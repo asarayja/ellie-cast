@@ -539,3 +539,28 @@ body.has-player .footer-inner { padding-bottom: 130px; }
   .game-pieces { grid-template-columns: 1fr; }
   .game-dl li { flex-direction: column; align-items: flex-start; }
 }
+
+/* ---------- Kontaktskjema (bare på webhotellet) ---------- */
+.contact-form { max-width: 620px; margin: 34px auto 0; text-align: left; display: grid; gap: 14px; scroll-margin-top: 110px; }
+.cf-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cf-field { display: grid; gap: 6px; min-width: 0; }
+.cf-field span { font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.cf-field input, .cf-field textarea { width: 100%; font: inherit; color: var(--ink); background: var(--glass-tint); border: 1px solid var(--glass-edge); border-radius: 16px; padding: 12px 16px; outline: none; transition: border-color .2s, box-shadow .2s; }
+.cf-field textarea { resize: vertical; min-height: 140px; }
+.cf-field input:focus, .cf-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.cf-hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.cf-captcha { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.cf-img { display: block; width: 220px; height: 72px; border-radius: 14px; border: 1px solid var(--glass-edge); background: #fbf4f8; }
+.cf-new { width: 44px; height: 44px; margin-bottom: 14px; border-radius: 50%; border: 1px solid var(--glass-edge); background: var(--glass-tint); color: var(--ink); font-size: 1.2rem; cursor: pointer; }
+.cf-new:hover { border-color: var(--accent); color: var(--accent); }
+.cf-code { flex: 1 1 160px; }
+.cf-code input { text-transform: uppercase; letter-spacing: .3em; font-weight: 700; }
+.cf-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 4px; }
+.contact .cf-status { margin: 0; max-width: none; font-size: .95rem; color: var(--muted); }
+.contact .cf-status.bad { color: #c0466b; }
+.cf-done { max-width: 520px; margin: 34px auto 0; padding: 24px; border-radius: 22px; background: var(--glass-tint); border: 1px solid var(--glass-edge); }
+.cf-done h3 { font-size: 2rem; margin: 0 0 6px; }
+.cf-done p { margin: 0; }
+@media (max-width: 760px) {
+  .cf-row { grid-template-columns: 1fr; }
+}
